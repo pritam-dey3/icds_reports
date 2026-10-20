@@ -35,6 +35,15 @@ PER_HEAD_COLUMNS = {
     "Children TTS": (CHILDREN, TTS),
 }
 
+# The four rate fields the editors show, in screen order: the pair a field edits and
+# the short heading above it. Derived from `PER_HEAD_COLUMNS`, so the headings and
+# the fields they label can never fall out of step.
+HEAD_INITIALS = {MOTHER: "M", CHILDREN: "C"}
+RATE_COLUMNS = tuple(
+    (head, day_type, f"{HEAD_INITIALS[head]} {day_type}")
+    for head, day_type in PER_HEAD_COLUMNS.values()
+)
+
 # How each item is titled in the editor. The keys are the ones the defaults sheets use.
 # The labels stay short so a row of four rate fields still fits a phone.
 ITEM_LABELS = {
@@ -88,7 +97,7 @@ def opening_defaults() -> pd.DataFrame:
     """
     sheet = pd.read_csv(assets_dir() / "defaults" / "initial_inventory.csv")
     sheet = sheet.set_index(sheet.columns[0])
-    values = pd.to_numeric(sheet.iloc[:, 0], errors="coerce").fillna(0)
+    values = pd.to_numeric(sheet.iloc[:, 0], errors="coerce")
     return pd.DataFrame({"opening": values})
 
 

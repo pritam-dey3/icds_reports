@@ -8,12 +8,11 @@ so it scrolls sideways, and nothing here is given a fixed size.
 import flet as ft
 import pandas as pd
 
-import calculation
 import reports
 from state import State
 
-SABJI = "sabji"
-REGISTER = "register"
+SABJI = reports.SABJI.key
+REGISTER = reports.REGISTER.key
 
 SABJI_CAPTION = reports.SABJI_CAPTION
 
@@ -23,9 +22,8 @@ CELL_SIZE = 12
 
 def sheet(state: State, name: str) -> ft.Control:
     """One sheet, chosen by name: the sabji bill, or the stock register."""
-    if name == REGISTER:
-        return table(reports.stock_register(state), calculation.REGISTER_MONEY_COLUMNS)
-    return table(reports.sabji_bill(state), calculation.SABJI_MONEY_COLUMNS)
+    chosen = reports.SHEETS[name]
+    return table(chosen.build(state), chosen.money_columns)
 
 
 def table(report: pd.DataFrame, money: tuple[str, ...]) -> ft.Control:

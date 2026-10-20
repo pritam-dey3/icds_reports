@@ -6,7 +6,8 @@ an empty cell wherever nothing is written.
 """
 
 import math
-from typing import Any
+from collections.abc import Callable
+from typing import Any, NamedTuple
 
 import pandas as pd
 
@@ -19,7 +20,7 @@ SABJI_CAPTION = "A blank cell is a closed day, or an item that is not served tha
 def sabji_bill(state: State) -> pd.DataFrame:
     """The sabji bill: one row per day, then the closing total."""
     report = calculation.sabji_bill(state.attendance_frame(), state.costs)
-    return _with_total(report, calculation.SABJI_MONEY_COLUMNS)
+    return _with_total(report)
 
 
 def stock_register(state: State) -> pd.DataFrame:
@@ -31,10 +32,33 @@ def stock_register(state: State) -> pd.DataFrame:
         state.opening,
         state.deliveries(),
     )
-    return _with_total(report, calculation.REGISTER_MONEY_COLUMNS)
+    return _with_total(report)
 
 
-def _with_total(report: pd.DataFrame, money: tuple[str, ...]) -> pd.DataFrame:
+class Sheet(NamedTuple):
+    """One of the two reports: what the screen calls it, its money columns, and how
+    its frame is built.
+
+    The sheet's name, title and money columns travel together, so a screen can list
+    and draw either report without knowing which is which.
+    """
+
+    key: str
+    title: str
+    money_columns: tuple[str, ...]
+    build: Callable[[State], pd.DataFrame]
+
+
+SABJI = Sheet("sabji", "Sabji bill", calculation.SABJI_MONEY_COLUMNS, sabji_bill)
+REGISTER = Sheet(
+    "register", "Stock register", calculation.REGISTER_MONEY_COLUMNS, stock_register
+)
+
+# Both sheets, in the order the report step offers them.
+SHEETS = {sheet.key: sheet for sheet in (SABJI, REGISTER)}
+
+
+def _with_total(report: pd.DataFrame) -> pd.DataFrame:
     """Lay the closing `Total` row under the month's days."""
     total = calculation.totals(report)
     row: dict[str, Any] = {"Date": "Total"}

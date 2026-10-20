@@ -14,17 +14,17 @@ from numbers import Real
 from typing import Any
 
 import flet as ft
+import pandas as pd
 
 import data
 import report_ui
+import reports
 from state import State
 
 STEPS = ("Costings", "Attendance", "Inventory", "Report")
 
 MUTED = ft.Colors.GREY_700
-
-# The column headings of a per-head table: each head, on each day type.
-RATE_COLUMNS = ("M MWF", "M TTS", "C MWF", "C TTS")
+HEADER_SIZE = 11
 
 # How much room a row's label takes, against one rate field. A label is twice as
 # wide as a field, which keeps a name readable without crowding the four fields.
@@ -167,13 +167,8 @@ def _navigation(workspace: Workspace) -> ft.Row:
 
 def _body(workspace: Workspace) -> ft.Control:
     """The open step's content."""
-    if workspace.step == 0:
-        return _costings(workspace)
-    if workspace.step == 1:
-        return _attendance(workspace)
-    if workspace.step == 2:
-        return _inventory(workspace)
-    return _report(workspace)
+    builder = (_costings, _attendance, _inventory, _report)[workspace.step]
+    return builder(workspace)
 
 
 # Step 1 — Costings
@@ -204,22 +199,7 @@ def _per_head_grid(
 ) -> ft.Control:
     """One row per item: its name, then a field for each head and day type."""
     rows: list[ft.Control] = [
-        ft.Row(
-            spacing=6,
-            controls=[
-                ft.Text("Item", size=11, color=MUTED, expand=LABEL_FLEX),
-                *[
-                    ft.Text(
-                        label,
-                        size=11,
-                        color=MUTED,
-                        text_align=ft.TextAlign.RIGHT,
-                        expand=FIELD_FLEX,
-                    )
-                    for label in RATE_COLUMNS
-                ],
-            ],
-        )
+        _header("Item", *[heading for _, _, heading in data.RATE_COLUMNS])
     ]
     for item in items:
         rows.append(
@@ -235,7 +215,7 @@ def _per_head_grid(
                                 _set_rate, workspace, table, item, head, day_type
                             ),
                         )
-                        for head, day_type in data.PER_HEAD_COLUMNS.values()
+                        for head, day_type, _ in data.RATE_COLUMNS
                     ],
                 ],
             )
@@ -243,7 +223,7 @@ def _per_head_grid(
     return ft.Column(spacing=8, controls=rows)
 
 
-def _total_row(costs: Any) -> ft.Control:
+def _total_row(costs: pd.DataFrame) -> ft.Control:
     """The total per head of the items the editor lists, as the paper sheet has it."""
     totals = costs.loc[list(data.COST_ITEMS)].sum()
     return ft.Container(
@@ -267,7 +247,7 @@ def _total_row(costs: Any) -> ft.Control:
                         text_align=ft.TextAlign.RIGHT,
                         expand=FIELD_FLEX,
                     )
-                    for head, day_type in data.PER_HEAD_COLUMNS.values()
+                    for head, day_type, _ in data.RATE_COLUMNS
                 ],
             ],
         ),
@@ -283,8 +263,8 @@ def _item_label(item: str) -> str:
 def _opening_stock(state: State, item: str) -> int:
     """A commodity's opening stock as the whole number the field shows."""
     amount = state.opening.at[item, "opening"]
-    # pandas hands back a numpy integer, which is a `numbers.Real` but not an `int`.
-    return int(amount) if isinstance(amount, Real) else 0
+    # pandas hands back a numpy number, which is a `Real` but not an `int`.
+    return int(float(amount)) if isinstance(amount, Real) else 0
 
 
 def _rate(state: State, table: str, item: str, head: str, day_type: str) -> int:
@@ -345,57 +325,32 @@ def _holidays(workspace: Workspace) -> ft.Column:
 
 def _attendance_grid(workspace: Workspace) -> ft.Column:
     """One row per day of the month: the date, then the two counts."""
-    rows: list[ft.Control] = [
-        ft.Row(
-            spacing=6,
-            controls=[
-                ft.Text("Date", size=11, color=MUTED, expand=LABEL_FLEX),
-                ft.Text(
-                    "Mother",
-                    size=11,
-                    color=MUTED,
-                    text_align=ft.TextAlign.RIGHT,
-                    expand=FIELD_FLEX,
-                ),
-                ft.Text(
-                    "Children",
-                    size=11,
-                    color=MUTED,
-                    text_align=ft.TextAlign.RIGHT,
-                    expand=FIELD_FLEX,
-                ),
-            ],
-        )
-    ]
+    rows: list[ft.Control] = [_header("Date", "Mother", "Children")]
     state = workspace.state
     for day in data.days_in(state.month):
+        fields: list[ft.Control]
         if state.is_holiday(day):
-            rows.append(
-                ft.Row(
-                    spacing=6,
-                    controls=[
-                        ft.Text(day.strftime("%a %d"), size=12, expand=LABEL_FLEX),
-                        ft.Text("Holiday", size=12, color=MUTED, expand=4),
-                    ],
-                )
-            )
-            continue
-        mothers, children = state.counts(day)
+            fields = [ft.Text("Holiday", size=12, color=MUTED, expand=4)]
+        else:
+            mothers, children = state.counts(day)
+            fields = [
+                _number_field(
+                    value=mothers,
+                    key=f"attendance-{day.isoformat()}-mothers",
+                    on_change=partial(_set_counts, workspace, day, "mothers"),
+                ),
+                _number_field(
+                    value=children,
+                    key=f"attendance-{day.isoformat()}-children",
+                    on_change=partial(_set_counts, workspace, day, "children"),
+                ),
+            ]
         rows.append(
             ft.Row(
                 spacing=6,
                 controls=[
                     ft.Text(day.strftime("%a %d"), size=12, expand=LABEL_FLEX),
-                    _number_field(
-                        value=mothers,
-                        key=f"attendance-{day.isoformat()}-mothers",
-                        on_change=partial(_set_counts, workspace, day, "mothers"),
-                    ),
-                    _number_field(
-                        value=children,
-                        key=f"attendance-{day.isoformat()}-children",
-                        on_change=partial(_set_counts, workspace, day, "children"),
-                    ),
+                    *fields,
                 ],
             )
         )
@@ -408,21 +363,7 @@ def _attendance_grid(workspace: Workspace) -> ft.Column:
 def _inventory(workspace: Workspace) -> ft.Control:
     """Where each commodity starts, and what arrives during the month."""
     state = workspace.state
-    opening: list[ft.Control] = [
-        ft.Row(
-            spacing=6,
-            controls=[
-                ft.Text("Commodity", size=11, color=MUTED, expand=LABEL_FLEX),
-                ft.Text(
-                    "Opening",
-                    size=11,
-                    color=MUTED,
-                    text_align=ft.TextAlign.RIGHT,
-                    expand=FIELD_FLEX,
-                ),
-            ],
-        )
-    ]
+    opening: list[ft.Control] = [_header("Commodity", "Opening")]
     for item in data.STOCK_ITEMS:
         opening.append(
             ft.Row(
@@ -545,10 +486,8 @@ def _report(workspace: Workspace) -> ft.Control:
                 allow_empty_selection=False,
                 selected=[workspace.report_sheet],
                 segments=[
-                    ft.Segment(value=report_ui.SABJI, label=ft.Text("Sabji bill")),
-                    ft.Segment(
-                        value=report_ui.REGISTER, label=ft.Text("Stock register")
-                    ),
+                    ft.Segment(value=option.key, label=ft.Text(option.title))
+                    for option in reports.SHEETS.values()
                 ],
                 on_change=partial(_switch_sheet, workspace),
             ),
@@ -567,6 +506,26 @@ def _heading(title: str, subtitle: str) -> ft.Control:
         controls=[
             ft.Text(title, size=15, weight=ft.FontWeight.W_600),
             ft.Text(subtitle, size=11, color=MUTED),
+        ],
+    )
+
+
+def _header(name: str, *fields: str) -> ft.Row:
+    """A grid's heading row: the name column, then one heading over each field."""
+    return ft.Row(
+        spacing=6,
+        controls=[
+            ft.Text(name, size=HEADER_SIZE, color=MUTED, expand=LABEL_FLEX),
+            *[
+                ft.Text(
+                    label,
+                    size=HEADER_SIZE,
+                    color=MUTED,
+                    text_align=ft.TextAlign.RIGHT,
+                    expand=FIELD_FLEX,
+                )
+                for label in fields
+            ],
         ],
     )
 
@@ -661,12 +620,7 @@ def _set_counts(
     value = _whole(event.control.value)
     if value is None:
         return
-    mothers, children = workspace.state.counts(day)
-    workspace.state.set_attendance(
-        day,
-        value if head == "mothers" else mothers,
-        value if head == "children" else children,
-    )
+    workspace.state.set_count(day, head, value)
     workspace.touch()
 
 
@@ -676,17 +630,27 @@ def _delete_holiday(workspace: Workspace, day: date, event: Any = None) -> None:
     workspace.rebuild()
 
 
+def _pick_day(
+    workspace: Workspace,
+    help_text: str,
+    on_picked: Callable[[ft.Event[ft.DatePicker]], None],
+) -> None:
+    """Open a date picker over the open month."""
+    days = list(data.days_in(workspace.state.month))
+    ft.context.page.show_dialog(
+        ft.DatePicker(
+            first_date=days[0],
+            last_date=days[-1],
+            value=days[0],
+            help_text=help_text,
+            on_change=on_picked,
+        )
+    )
+
+
 def _pick_holiday(workspace: Workspace, event: Any = None) -> None:
     """Ask for the day to close."""
-    days = list(data.days_in(workspace.state.month))
-    picker = ft.DatePicker(
-        first_date=days[0],
-        last_date=days[-1],
-        value=days[0],
-        help_text="Add a holiday",
-        on_change=partial(_holiday_picked, workspace),
-    )
-    ft.context.page.show_dialog(picker)
+    _pick_day(workspace, "Add a holiday", partial(_holiday_picked, workspace))
 
 
 def _holiday_picked(workspace: Workspace, event: ft.Event[ft.DatePicker]) -> None:
@@ -732,15 +696,7 @@ def _set_delivery_amount(
 
 def _pick_delivery_day(workspace: Workspace, index: int, event: Any = None) -> None:
     """Ask for the day a delivery arrived."""
-    days = list(data.days_in(workspace.state.month))
-    picker = ft.DatePicker(
-        first_date=days[0],
-        last_date=days[-1],
-        value=days[0],
-        help_text="Date added",
-        on_change=partial(_delivery_day_picked, workspace, index),
-    )
-    ft.context.page.show_dialog(picker)
+    _pick_day(workspace, "Date added", partial(_delivery_day_picked, workspace, index))
 
 
 def _delivery_day_picked(

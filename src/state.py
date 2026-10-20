@@ -121,6 +121,12 @@ class State:
             DEFAULT_CHILDREN if children is None else max(0, children),
         ]
 
+    def set_count(self, day: date, head: str, value: int) -> None:
+        """Record one head's count, leaving the other as it was."""
+        mothers, children = self.counts(day)
+        updated = {"mothers": mothers, "children": children, head: value}
+        self.set_attendance(day, updated["mothers"], updated["children"])
+
     # Holidays
 
     def holidays(self, month: str | None = None) -> list[date]:
