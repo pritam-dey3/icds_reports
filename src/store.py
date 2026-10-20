@@ -1,72 +1,67 @@
-"""Where the worksheet is kept: one JSON file in the app's data directory.
+"""Where the worksheet is kept: one entry in the app's key-value store.
 
-The directory is `FLET_APP_STORAGE_DATA` — the app's private, durable storage, which
-survives an app update. It is deliberately not the cache directory, which the OS may
-empty when the device runs out of room.
-
-`ICDS_DATA_DIR` overrides it, which is how the tests keep the real workspace clean.
-Under `flet run` the storage directory is `.flet/storage/data`. In the browser there
-is no such directory, so nothing is written and a refresh starts from the defaults.
+`SharedPreferences` is the durable store on every platform: browser storage on the
+web, and the platform's preference store (UserDefaults, DataStore, the registry) on
+desktop and mobile. The whole worksheet — every rate, every month's inputs, and the
+screen the user left it on — goes under one key, so a write lands whole or not at all.
 """
 
 import json
-import os
-from pathlib import Path
+from dataclasses import dataclass
+
+import flet as ft
 
 from state import State
 
-FILE_NAME = "icds-reports.json"
+KEY = "icds-reports"
 
 
-def data_dir() -> Path | None:
-    """The directory the state file belongs in, or `None` where there is no disk."""
-    override = os.environ.get("ICDS_DATA_DIR")
-    if override:
-        return Path(override)
-    app_storage = os.environ.get("FLET_APP_STORAGE_DATA")
-    if app_storage:
-        return Path(app_storage)
-    fallback = Path.cwd() / ".flet" / "storage" / "data"
-    return fallback if fallback.is_dir() else None
+@dataclass
+class Saved:
+    """The worksheet, and the screen the user left it on."""
+
+    state: State
+    step: int | None = None
+    sheet: str | None = None
 
 
-def file_path(directory: Path | str | None = None) -> Path | None:
-    """The state file's path, or `None` when the app has no writable directory."""
-    base = Path(directory) if directory is not None else data_dir()
-    return None if base is None else base / FILE_NAME
+async def load(prefs: ft.SharedPreferences) -> Saved:
+    """The saved worksheet and screen, or the shipped defaults on a first run."""
+    payload = await prefs.get(KEY)
+    if isinstance(payload, str):
+        saved = _decode(payload)
+        if saved is not None:
+            return saved
+    return Saved(State.new())
 
 
-def load(directory: Path | str | None = None) -> State:
-    """Read the saved worksheet, or start from the shipped defaults.
-
-    A file that is missing, unreadable or in an older shape is not an error the user
-    can do anything about, so it is treated as "nothing saved yet".
-    """
-    target = file_path(directory)
-    if target is None or not target.exists():
-        return State.new()
-    try:
-        payload = json.loads(target.read_text(encoding="utf-8"))
-        return State.from_dict(payload)
-    except (OSError, ValueError, KeyError, TypeError):
-        return State.new()
+async def save(prefs: ft.SharedPreferences, saved: Saved) -> bool:
+    """Write the whole worksheet and screen, one key, one write."""
+    payload = {"state": saved.state.to_dict(), "step": saved.step, "sheet": saved.sheet}
+    return await prefs.set(KEY, json.dumps(payload))
 
 
-def save(state: State, directory: Path | str | None = None) -> bool:
-    """Write the worksheet, atomically so an interrupted write cannot corrupt it."""
-    target = file_path(directory)
-    if target is None:
-        return False
-    target.parent.mkdir(parents=True, exist_ok=True)
-    pending = target.with_suffix(".json.tmp")
-    pending.write_text(json.dumps(state.to_dict(), indent=2), encoding="utf-8")
-    pending.replace(target)
-    return True
-
-
-def reset(directory: Path | str | None = None) -> State:
+async def reset(prefs: ft.SharedPreferences) -> Saved:
     """Delete the saved worksheet and return the shipped defaults."""
-    target = file_path(directory)
-    if target is not None and target.exists():
-        target.unlink()
-    return State.new()
+    await prefs.remove(KEY)
+    return Saved(State.new())
+
+
+def _decode(payload: str) -> Saved | None:
+    """The saved worksheet, or `None` for anything this build cannot read.
+
+    A payload that is unreadable or in an older shape is not an error the user can do
+    anything about, so it counts as "nothing saved yet".
+    """
+    try:
+        saved = json.loads(payload)
+        state = State.from_dict(saved["state"])
+        step = saved.get("step")
+        sheet = saved.get("sheet")
+    except (AttributeError, ValueError, KeyError, TypeError):
+        return None
+    return Saved(
+        state,
+        step if isinstance(step, int) else None,
+        sheet if isinstance(sheet, str) else None,
+    )

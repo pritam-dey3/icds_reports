@@ -1,4 +1,4 @@
-"""The saved worksheet: where it lives, what survives, and what a bad file does."""
+"""The saved worksheet: what survives, and what an unreadable payload does."""
 
 import json
 from datetime import date
@@ -10,58 +10,20 @@ import store
 from state import State
 
 
-def saved_file(directory):
-    return directory / store.FILE_NAME
-
-
-def test_the_state_file_lives_in_the_app_data_directory(tmp_path):
-    assert store.file_path(tmp_path) == tmp_path / store.FILE_NAME
-
-
-def test_the_override_directory_wins_over_the_app_storage_directory(
-    monkeypatch, tmp_path
-):
-    monkeypatch.setenv("ICDS_DATA_DIR", str(tmp_path / "override"))
-    monkeypatch.setenv("FLET_APP_STORAGE_DATA", str(tmp_path / "app"))
-
-    assert store.data_dir() == tmp_path / "override"
-
-
-def test_the_app_storage_directory_is_used_when_no_override_is_set(
-    monkeypatch, tmp_path
-):
-    """The data directory is the durable one; the cache can be emptied by the OS."""
-    monkeypatch.delenv("ICDS_DATA_DIR", raising=False)
-    monkeypatch.setenv("FLET_APP_STORAGE_DATA", str(tmp_path / "app"))
-
-    assert store.data_dir() == tmp_path / "app"
-
-
-def test_with_no_directory_at_all_the_app_still_opens(monkeypatch, tmp_path):
-    """In a browser there is no disk: the app runs, it just cannot save."""
-    monkeypatch.delenv("ICDS_DATA_DIR", raising=False)
-    monkeypatch.delenv("FLET_APP_STORAGE_DATA", raising=False)
-    monkeypatch.chdir(tmp_path)
-
-    assert store.data_dir() is None
-    assert store.save(State.new("2026-10")) is False
-    assert store.load().month  # the shipped defaults, not a crash
-
-
-def test_saving_then_loading_gives_back_the_same_sheet(tmp_path):
+async def test_saving_then_loading_gives_back_the_same_sheet(prefs):
     state = State.new("2026-10")
     state.costs.loc["egg", ("mother", "MWF")] = 900
-    state.add_delivery("rice_g", __import__("datetime").date(2026, 10, 17), 30000)
+    state.add_delivery("rice_g", date(2026, 10, 17), 30000)
 
-    assert store.save(state, tmp_path) is True
-    restored = store.load(tmp_path)
+    assert await store.save(prefs, store.Saved(state)) is True
+    restored = await store.load(prefs)
 
-    assert restored.costs.at["egg", ("mother", "MWF")] == 900
-    assert restored.additions() == state.additions()
+    assert restored.state.costs.at["egg", ("mother", "MWF")] == 900
+    assert restored.state.additions() == state.additions()
 
 
-def test_every_input_survives_a_round_trip_through_the_file(tmp_path):
-    """The whole worksheet is written to disk and read back, input by input."""
+async def test_every_input_survives_a_round_trip(prefs):
+    """The whole worksheet is written to the store and read back, input by input."""
     state = State.new("2026-10")
     state.costs.loc["egg", ("mother", "MWF")] = 901
     state.inventory.loc["rice_g", ("children", "TTS")] = 76
@@ -71,8 +33,8 @@ def test_every_input_survives_a_round_trip_through_the_file(tmp_path):
     state.remove_holiday(date(2026, 10, 4))
     state.add_delivery("mustard_oil_ml", date(2026, 10, 9), 500)
 
-    store.save(state, tmp_path)
-    restored = store.load(tmp_path)
+    await store.save(prefs, store.Saved(state))
+    restored = (await store.load(prefs)).state
 
     assert restored.month == "2026-10"
     assert restored.costs.at["egg", ("mother", "MWF")] == 901
@@ -92,30 +54,35 @@ def test_every_input_survives_a_round_trip_through_the_file(tmp_path):
     assert fifth["Total Egg Cost"] == pytest.approx(550.63)
 
 
-def test_saving_writes_a_readable_json_file(tmp_path):
-    store.save(State.new("2026-10"), tmp_path)
+async def test_the_screen_the_user_left_is_saved_too(prefs):
+    """The step and the report sheet are app state, so they are saved with the sheet."""
+    await store.save(
+        prefs, store.Saved(State.new("2026-10"), step=2, sheet="stock_register")
+    )
 
-    payload = json.loads(saved_file(tmp_path).read_text(encoding="utf-8"))
+    restored = await store.load(prefs)
 
-    assert payload["month"] == "2026-10"
-    assert "costs" in payload and "months" in payload
-    # No pickles: the file is data a person can read.
-    assert saved_file(tmp_path).suffix == ".json"
-
-
-def test_saving_leaves_no_temporary_file_behind(tmp_path):
-    store.save(State.new("2026-10"), tmp_path)
-
-    leftovers = [path.name for path in tmp_path.iterdir() if path.name.endswith(".tmp")]
-    assert leftovers == []
-    assert saved_file(tmp_path).exists()
+    assert restored.step == 2
+    assert restored.sheet == "stock_register"
 
 
-def test_a_missing_file_loads_the_shipped_defaults(tmp_path):
-    restored = store.load(tmp_path)
+async def test_saving_writes_one_readable_json_payload(prefs):
+    await store.save(prefs, store.Saved(State.new("2026-10")))
 
-    assert restored.costs.at["egg", ("mother", "MWF")] == 850
-    assert restored.additions() == []
+    payload = json.loads(prefs.values[store.KEY])
+
+    assert payload["state"]["month"] == "2026-10"
+    assert "costs" in payload["state"] and "months" in payload["state"]
+    # No pickles: the entry is data a person can read.
+    assert isinstance(payload["state"], dict)
+
+
+async def test_a_first_run_loads_the_shipped_defaults(prefs):
+    restored = await store.load(prefs)
+
+    assert restored.state.costs.at["egg", ("mother", "MWF")] == 850
+    assert restored.state.additions() == []
+    assert restored.step is None and restored.sheet is None
 
 
 @pytest.mark.parametrize(
@@ -123,28 +90,41 @@ def test_a_missing_file_loads_the_shipped_defaults(tmp_path):
     [
         "not json at all",
         "{}",
-        '{"month": "2026-10"}',
-        '{"month": "2026-10", "months": []}',
+        "[]",
+        '{"state": {}}',
+        '{"state": {"month": "2026-10"}}',
+        '{"state": {"month": "2026-10", "months": []}}',
     ],
 )
-def test_a_file_that_cannot_be_read_falls_back_to_the_defaults(tmp_path, content):
-    saved_file(tmp_path).write_text(content, encoding="utf-8")
+async def test_a_payload_that_cannot_be_read_falls_back_to_the_defaults(prefs, content):
+    prefs.values[store.KEY] = content
 
-    restored = store.load(tmp_path)
+    restored = await store.load(prefs)
 
-    assert restored.costs.at["egg", ("mother", "MWF")] == 850
+    assert restored.state.costs.at["egg", ("mother", "MWF")] == 850
+    assert restored.step is None
 
 
-def test_a_reset_deletes_the_file_and_returns_the_defaults(tmp_path):
+async def test_a_save_reports_whether_the_store_took_it(prefs, monkeypatch):
+    async def refuse(key, value):
+        return False
+
+    monkeypatch.setattr(prefs, "set", refuse)
+
+    assert await store.save(prefs, store.Saved(State.new("2026-10"))) is False
+
+
+async def test_a_reset_deletes_the_entry_and_returns_the_defaults(prefs):
     state = State.new("2026-10")
     state.costs.loc["egg", ("mother", "MWF")] = 900
-    store.save(state, tmp_path)
+    await store.save(prefs, store.Saved(state, step=2, sheet="stock_register"))
 
-    fresh = store.reset(tmp_path)
+    fresh = await store.reset(prefs)
 
-    assert not saved_file(tmp_path).exists()
-    assert fresh.costs.at["egg", ("mother", "MWF")] == 850
+    assert store.KEY not in prefs.values
+    assert fresh.state.costs.at["egg", ("mother", "MWF")] == 850
+    assert fresh.step is None and fresh.sheet is None
 
 
-def test_a_reset_with_no_file_still_returns_the_defaults(tmp_path):
-    assert store.reset(tmp_path).costs.at["egg", ("mother", "MWF")] == 850
+async def test_a_reset_with_nothing_saved_still_returns_the_defaults(prefs):
+    assert (await store.reset(prefs)).state.costs.at["egg", ("mother", "MWF")] == 850

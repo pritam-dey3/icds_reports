@@ -10,11 +10,13 @@ controls and calls their handlers directly.
 
 import os
 
+import flet as ft
 import pytest
 import pytest_asyncio
 
 import store
 import ui
+from state import State
 
 RUN_UI_TESTS = os.environ.get("FLET_UI_TESTS") == "1"
 
@@ -73,31 +75,34 @@ async def test_a_typed_rate_reaches_the_saved_worksheet(app):
     await tester.pump_and_settle()
 
     await tester.enter_text(await tester.find_by_key("cost-egg-mother-MWF"), "900")
+    # The write is queued, so give the session a frame or two to land it.
+    await tester.pump_and_settle()
     await tester.pump_and_settle()
 
-    assert store.load().costs.at["egg", ("mother", "MWF")] == 900
+    prefs = next(s for s in app.page.services if isinstance(s, ft.SharedPreferences))
+    restored = await store.load(prefs)
+
+    assert restored.state.costs.at["egg", ("mother", "MWF")] == 900
 
 
 # The two below need no toolchain, so they run in the ordinary suite.
 
 
 def test_the_workspace_opens_on_the_first_step():
-    workspace = ui.Workspace(store.load())
+    workspace = ui.Workspace(State.new("2026-10"))
 
     assert workspace.step == 0
     assert workspace.state.month
 
 
-def test_nothing_is_deleted_until_a_reset_is_accepted():
-    """The confirmation dialog is the guard; the file survives until it is accepted."""
-    state = store.load()
+async def test_nothing_is_deleted_until_a_reset_is_accepted(prefs):
+    """The confirmation dialog is the guard; the entry survives until it is accepted."""
+    state = State.new("2026-10")
     state.costs.loc["egg", ("mother", "MWF")] = 900
-    store.save(state)
+    await store.save(prefs, store.Saved(state))
 
-    assert store.load().costs.at["egg", ("mother", "MWF")] == 900
+    assert (await store.load(prefs)).state.costs.at["egg", ("mother", "MWF")] == 900
+    assert store.KEY in prefs.values
 
-    target = store.file_path()
-    assert target is not None and target.exists()
-
-    store.reset()
-    assert store.load().costs.at["egg", ("mother", "MWF")] == 850
+    await store.reset(prefs)
+    assert (await store.load(prefs)).state.costs.at["egg", ("mother", "MWF")] == 850

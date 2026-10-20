@@ -8,6 +8,7 @@ venv/
 env/
 dump/*
 agent-tasks/
+dist/
 # Environments / secrets
 .env
 

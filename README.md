@@ -72,7 +72,7 @@ The month sits above every step and applies to all of them.
 | `src/calculation.py` | The two reports, column by column: day types, per-head arithmetic, the stock ledger, money conversion, the closing `Total` row. |
 | `src/data.py` | The shipped defaults, item names and units, the months the picker offers, the calendar, the fresh attendance sheet. |
 | `src/state.py` | Everything the user can edit, one month at a time: the shared rate tables and each month's attendance, holidays and deliveries. |
-| `src/store.py` | Saving that state to one JSON file in the app's data directory. |
+| `src/store.py` | Saving that state, and the screen it was left on, to shared preferences. |
 | `src/reports.py` | The closing `Total` row, and every cell as the text the sheet shows. |
 | `src/ui.py` | The four steps, the month picker, and the edits. |
 | `src/report_ui.py` | The two sheets as read-only tables. |
@@ -100,13 +100,17 @@ paper carries is dropped on read so it is never counted twice.
 
 ## Saving
 
-Edits are saved to `icds-reports.json` in `FLET_APP_STORAGE_DATA`, the app's own durable
-storage, which survives an app update. It is deliberately not the cache directory, which
-the system may empty when the device runs out of room.
+Every edit is written to `ft.SharedPreferences`, the durable store on each platform: the
+browser's local storage on the web, and the platform's preference store (UserDefaults,
+DataStore, the registry) on desktop and mobile. The whole worksheet — the shared rate
+tables, every month's attendance, holidays and deliveries, and the step and report sheet
+the user left open — goes under one key, so a write lands whole or not at all, and a
+reload brings back every input.
 
 - **Reset data** in the app bar's overflow menu clears every edit, after asking.
-- `ICDS_DATA_DIR` overrides the location, which is how the tests stay out of the way.
-- In a browser there is no such directory: the app runs, but a refresh starts over.
+- Opening the app with `?reset=1` also starts over, which is how a web user clears storage.
+- There is no second copy on disk, and no environment variable: the store is the only
+  place the worksheet lives, so the app behaves the same in a browser and on a device.
 
 ---
 
@@ -122,7 +126,7 @@ uvx pyrefly check
 | `tests/test_calculation.py` | Both reports against a two-day month whose figures were worked out by hand, plus the closing `Total` row and the delivery rules |
 | `tests/test_data.py` | The bundled sheets, the months offered, the calendar, the attendance sheet |
 | `tests/test_state.py` | Holidays masking a day, carrying over by day of month, deliveries, reset, save/restore |
-| `tests/test_store.py` | Where the file lives, round trips, and what a corrupt file does |
+| `tests/test_store.py` | Round trips, the saved screen, and what an unreadable payload does |
 | `tests/test_reports.py` | The `Total` row, two-decimal money, blanks as empty text |
 | `tests/test_ui.py` | What each step is built from, and what every edit does |
 | `tests/test_main.py` | The running app, driven through Flet's test harness |

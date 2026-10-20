@@ -1,0 +1,92 @@
+# CI/CD: test on every push/PR, then build the Flet web app and mirror the result
+# onto the `publish` branch. GitHub Pages serves that branch.
+#
+# One-time repo setting: Settings -> Pages -> Source: "Deploy from a branch",
+# branch `publish`, folder `/ (root)`. Every run force-pushes a fresh orphan
+# commit, so the branch holds nothing but the built site.
+
+name: CI/CD
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# One deploy at a time; PR runs may cancel each other.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Install dependencies
+        run: uv sync --frozen
+
+      - name: Type check
+        run: uvx pyrefly check
+
+      - name: Test
+        run: uv run pytest -q
+
+  deploy:
+    needs: test
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Install dependencies
+        run: uv sync --frozen
+
+      # A project site lives at /<repo>/, a user site at /. Tell Flet which one
+      # this is so every asset and the PWA manifest resolve correctly.
+      - name: Build static site
+        run: |
+          owner=$(echo "$GITHUB_REPOSITORY_OWNER" | tr '[:upper:]' '[:lower:]')
+          repo=${GITHUB_REPOSITORY#*/}
+          base_url="/$repo/"
+          if [ "$repo" = "$owner.github.io" ]; then
+            base_url="/"
+          fi
+          echo "Building with base URL $base_url"
+          uv run flet publish --distpath dist --base-url "$base_url"
+
+      # Pages runs Jekyll by default, which drops files and folders starting
+      # with an underscore. The app needs no Jekyll processing at all.
+      - name: Disable Jekyll
+        run: touch dist/.nojekyll
+
+      - name: Publish to `publish` branch
+        working-directory: dist
+        run: |
+          git init -q -b publish
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add --all
+          git commit -q --allow-empty -m "Publish ${{ github.sha }}"
+          git push --force "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" HEAD:publish

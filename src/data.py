@@ -123,6 +123,7 @@ def _two_heading_sheet(path: Path) -> pd.DataFrame:
     names = raw.iloc[:, 0]
     frame = raw.iloc[:, 1:].copy()
     frame.index = pd.Index(names.astype(str).str.strip(), name="item")
+    # pyrefly: ignore[unsupported-operation]
     frame = frame.loc[~frame.index.isin(["item", "total"])]
     frame.columns = pd.MultiIndex.from_tuples([
         _pair(f"{head} {day_type}") for head, day_type in frame.columns

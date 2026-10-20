@@ -82,11 +82,12 @@ class Workspace:
         self._on_rebuild = on_rebuild or (lambda: None)
 
     def touch(self) -> None:
-        """An edit in place: save it, leave the screen as it is."""
-        before = self.saved
+        """An edit in place: hand it to the store, leaving the screen as it is.
+
+        The store writes in the background, so a failure is reported by the writer
+        rather than here.
+        """
         self.saved = self._on_edit()
-        if self.saved is False and before is not False:
-            _save_failed(self)
 
     def rebuild(self) -> None:
         """A change of shape: save it and draw the screen again."""
@@ -360,9 +361,9 @@ def _navigation(workspace: Workspace) -> ft.Row:
     )
 
 
-def _save_failed(workspace: Workspace) -> None:
+def save_failed(workspace: Workspace, page: ft.Page | None = None) -> None:
     """A small word when a write does not land; a successful save stays silent."""
-    ft.context.page.show_dialog(
+    (page or ft.context.page).show_dialog(
         ft.SnackBar(
             content=t.label("Couldn't save this change", t.HINT, t.TEXT_INVERSE),
             behavior=ft.SnackBarBehavior.FLOATING,
