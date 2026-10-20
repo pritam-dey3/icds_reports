@@ -124,8 +124,11 @@ class State:
     def set_count(self, day: date, head: str, value: int) -> None:
         """Record one head's count, leaving the other as it was."""
         mothers, children = self.counts(day)
-        updated = {"mothers": mothers, "children": children, head: value}
-        self.set_attendance(day, updated["mothers"], updated["children"])
+        if head == "mothers":
+            mothers = value
+        else:
+            children = value
+        self.set_attendance(day, mothers, children)
 
     # Holidays
 

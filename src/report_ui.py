@@ -42,12 +42,17 @@ _LEDGER_TINTS = {
 
 
 class Column(NamedTuple):
-    """One sheet column: the band it sits under, its own heading, its tint."""
+    """One sheet column: the band it sits under, its own heading, its tint.
+
+    `muted` writes the figures in a lighter ink; `closing` marks a balance, whose
+    total is the stock left at month end rather than a sum.
+    """
 
     group: str
     label: str
     tint: str = t.TABLE_HEADER
     muted: bool = False
+    closing: bool = False
 
 
 def _ledger_columns() -> dict[str, Column]:
@@ -55,7 +60,7 @@ def _ledger_columns() -> dict[str, Column]:
     columns: dict[str, Column] = {}
     for item, (balance, consumption) in calculation.LEDGER_COLUMNS.items():
         tint = _LEDGER_TINTS[item]
-        columns[balance] = Column(data.ITEM_LABELS[item], "Balance", tint)
+        columns[balance] = Column(data.ITEM_LABELS[item], "Balance", tint, closing=True)
         columns[consumption] = Column(data.ITEM_LABELS[item], "Consumption", tint)
     return columns
 
@@ -275,20 +280,11 @@ def _day_row(
     day: date, closed: bool, values: list[str], columns: list[Column], widths: list[int]
 ) -> DataRow2:
     """One day: its date, then a figure per column."""
+    tint = t.CLOSED_ROW if closed else t.SURFACE
     return DataRow2(
         specific_row_height=ROW_HEIGHT,
         cells=[
-            _cell(
-                t.label(
-                    _date_label(day),
-                    t.REPORT_CELL,
-                    t.CLOSED_INK if closed else None,
-                    nowrap=True,
-                ),
-                DATE_WIDTH,
-                t.CLOSED_ROW if closed else t.SURFACE,
-                ft.Alignment.CENTER_LEFT,
-            ),
+            _date_cell(_date_label(day), tint, ink=t.CLOSED_INK if closed else None),
             *[
                 _cell(
                     t.label(
@@ -298,7 +294,7 @@ def _day_row(
                         nowrap=True,
                     ),
                     widths[index],
-                    t.CLOSED_ROW if closed else t.SURFACE,
+                    tint,
                     ft.Alignment.CENTER_RIGHT,
                 )
                 for index, (column, value) in enumerate(
@@ -314,12 +310,7 @@ def _total_row(columns: list[Column], values: list[str], widths: list[int]) -> D
     return DataRow2(
         specific_row_height=TOTAL_HEIGHT,
         cells=[
-            _cell(
-                t.label("Total", t.TOTAL_LABEL),
-                DATE_WIDTH,
-                t.SURFACE_MUTED,
-                ft.Alignment.CENTER_LEFT,
-            ),
+            _date_cell("Total", t.SURFACE_MUTED, style=t.TOTAL_LABEL),
             *[
                 _cell(
                     _total_cell(column, value),
@@ -335,9 +326,25 @@ def _total_row(columns: list[Column], values: list[str], widths: list[int]) -> D
     )
 
 
+def _date_cell(
+    label: str,
+    bgcolor: str,
+    *,
+    style: ft.TextStyle = t.REPORT_CELL,
+    ink: str | None = None,
+) -> ft.DataCell:
+    """A cell of the pinned date column."""
+    return _cell(
+        t.label(label, style, ink, nowrap=True),
+        DATE_WIDTH,
+        bgcolor,
+        ft.Alignment.CENTER_LEFT,
+    )
+
+
 def _total_cell(column: Column, value: str) -> ft.Control:
     """A total cell; a balance says it closes the month rather than sums it."""
-    if column.label.startswith("Balance") and value:
+    if column.closing and value:
         return ft.Column(
             spacing=0,
             alignment=ft.MainAxisAlignment.CENTER,

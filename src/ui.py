@@ -60,14 +60,14 @@ class Workspace:
     """The screen's own state — the open step, the open sheet — and its way back.
 
     `touch` records an edit and saves it; `rebuild` does that and draws the screen
-    again, for the changes that alter its shape. `saved` is what the footer reports:
-    nothing while an edit is in flight, then whether the write landed.
+    again, for the changes that alter its shape. `failure_shown` remembers that a
+    write failure has been announced, so a queue of failed writes warns once.
     """
 
     def __init__(
         self,
         state: State,
-        on_edit: Callable[[], bool | None] | None = None,
+        on_edit: Callable[[], None] | None = None,
         on_rebuild: Callable[[], None] | None = None,
         *,
         files: ft.FilePicker | None = None,
@@ -76,8 +76,7 @@ class Workspace:
         self.step = 0
         self.report_sheet = report_ui.SABJI
         self.files = files
-        self.saved: bool | None = None
-        self.notice = ""
+        self.failure_shown = False
         self._on_edit = on_edit or (lambda: None)
         self._on_rebuild = on_rebuild or (lambda: None)
 
@@ -87,7 +86,7 @@ class Workspace:
         The store writes in the background, so a failure is reported by the writer
         rather than here.
         """
-        self.saved = self._on_edit()
+        self._on_edit()
 
     def rebuild(self) -> None:
         """A change of shape: save it and draw the screen again."""
@@ -118,20 +117,21 @@ def _content(workspace: Workspace) -> ft.Control:
     the header strip only stays still while the figures scroll under it, which needs
     a boundary of its own. Every other step scrolls as one long page.
     """
+    at_report = workspace.step == REPORT_STEP
     padded = ft.Container(
         width=t.CONTENT_WIDTH,
         padding=ft.Padding.only(
             left=t.SPACE_3, right=t.SPACE_3, top=t.SPACE_2, bottom=t.SPACE_4
         ),
-        expand=workspace.step == REPORT_STEP,
+        expand=at_report,
         content=ft.Column(
-            expand=workspace.step == REPORT_STEP,
+            expand=at_report,
             spacing=t.SPACE_3,
             horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
             controls=_page(workspace),
         ),
     )
-    if workspace.step == REPORT_STEP:
+    if at_report:
         return padded
     return ft.Column(
         expand=True,
@@ -223,7 +223,7 @@ def _stepper(workspace: Workspace) -> ft.Row:
 
 def _step_column(workspace: Workspace, index: int) -> ft.Column:
     """One step: its node on the rail, and its name beneath."""
-    state = step_state(workspace, index)
+    status = step_state(workspace, index)
     return ft.Column(
         expand=True,
         spacing=t.SPACE_1,
@@ -233,13 +233,13 @@ def _step_column(workspace: Workspace, index: int) -> ft.Column:
                 spacing=0,
                 controls=[
                     _rail(workspace, index, before=True),
-                    _node(workspace, index, state),
+                    _node(workspace, index, status),
                     _rail(workspace, index, before=False),
                 ],
             ),
             ft.Text(
                 f"{index + 1}. {STEPS[index]}",
-                style=t.STEP_LABEL_ACTIVE if state == "current" else t.STEP_LABEL,
+                style=t.STEP_LABEL_ACTIVE if status == "current" else t.STEP_LABEL,
                 text_align=ft.TextAlign.CENTER,
                 no_wrap=True,
                 overflow=ft.TextOverflow.ELLIPSIS,
@@ -259,13 +259,13 @@ def _rail(workspace: Workspace, index: int, *, before: bool) -> ft.Container:
     )
 
 
-def _node(workspace: Workspace, index: int, state: str) -> ft.Container:
+def _node(workspace: Workspace, index: int, status: str) -> ft.Container:
     """One node: a tick once passed, the step's number while it is open or ahead.
 
     The ring around the open node is drawn for every step, filled only for the open
     one, so all four labels keep the same baseline.
     """
-    filled = state != "upcoming"
+    filled = status != "upcoming"
     circle = ft.Container(
         width=30,
         height=30,
@@ -275,7 +275,7 @@ def _node(workspace: Workspace, index: int, state: str) -> ft.Container:
         alignment=ft.Alignment.CENTER,
         content=(
             ft.Icon(ft.Icons.CHECK, size=16, color=t.TEXT_INVERSE)
-            if state == "passed"
+            if status == "passed"
             else t.label(
                 str(index + 1), t.STEP_NUMBER if filled else t.STEP_NUMBER_AHEAD
             )
@@ -290,7 +290,7 @@ def _node(workspace: Workspace, index: int, state: str) -> ft.Container:
         content=ft.Container(
             padding=5,
             border_radius=t.RADIUS_PILL,
-            bgcolor=t.PRIMARY_100 if state == "current" else None,
+            bgcolor=t.PRIMARY_100 if status == "current" else None,
             content=circle,
         ),
     )
@@ -314,30 +314,26 @@ def footer(workspace: Workspace) -> ft.Container:
 
 def _navigation(workspace: Workspace) -> ft.Row:
     """The step change, from either end; the report swaps in the export pair."""
-    if workspace.step == len(STEPS) - 1:
-        return ft.Row(
-            spacing=t.SPACE_3,
-            controls=[
-                c.button(
-                    "Export CSV",
-                    key="export-csv",
-                    icon=ft.Icons.DOWNLOAD,
-                    variant="outlined",
-                    expand=True,
-                    on_click=partial(_export, workspace, "csv"),
-                ),
-                c.button(
-                    "Download PDF",
-                    key="export-pdf",
-                    icon=ft.Icons.PICTURE_AS_PDF,
-                    expand=True,
-                    on_click=partial(_export, workspace, "pdf"),
-                ),
-            ],
-        )
-    return ft.Row(
-        spacing=t.SPACE_3,
-        controls=[
+    if workspace.step == REPORT_STEP:
+        buttons: list[ft.Control] = [
+            c.button(
+                "Export CSV",
+                key="export-csv",
+                icon=ft.Icons.DOWNLOAD,
+                variant="outlined",
+                expand=True,
+                on_click=partial(_export, workspace, "csv"),
+            ),
+            c.button(
+                "Download PDF",
+                key="export-pdf",
+                icon=ft.Icons.PICTURE_AS_PDF,
+                expand=True,
+                on_click=partial(_export, workspace, "pdf"),
+            ),
+        ]
+    else:
+        buttons = [
             c.button(
                 "Back",
                 key="back",
@@ -352,13 +348,12 @@ def _navigation(workspace: Workspace) -> ft.Row:
                 key="next",
                 icon=ft.Icons.ARROW_FORWARD,
                 expand=True,
-                disabled=workspace.step == len(STEPS) - 1,
                 on_click=partial(
-                    _open_step, workspace, min(len(STEPS) - 1, workspace.step + 1)
+                    _open_step, workspace, min(REPORT_STEP, workspace.step + 1)
                 ),
             ),
-        ],
-    )
+        ]
+    return ft.Row(spacing=t.SPACE_3, controls=buttons)
 
 
 def save_failed(workspace: Workspace, page: ft.Page | None = None) -> None:
@@ -384,8 +379,7 @@ def save_failed(workspace: Workspace, page: ft.Page | None = None) -> None:
 
 def _toast_dismissed(workspace: Workspace, event: Any = None) -> None:
     """Let a later failed write speak again once this toast is gone."""
-    if workspace.saved is False:
-        workspace.saved = None
+    workspace.failure_shown = False
 
 
 def _body(workspace: Workspace) -> ft.Control:
@@ -425,16 +419,20 @@ def _rate_table(
     workspace: Workspace,
     table: str,
     items: tuple[str, ...],
-    prefix: str,
+    key_prefix: str,
     *,
     total: bool,
 ) -> ft.Control:
-    """One row per item, under a band per head and a heading per day type."""
+    """One row per item, under a band per head and a heading per day type.
+
+    `table` names the state table being edited; `key_prefix` names the fields that
+    edit it, which is shorter (`cost` for the `costs` table).
+    """
     rows: list[ft.Control] = [_head_band(), _rate_headings()]
-    rows += [_rate_row(workspace, table, item, prefix) for item in items]
+    rows += [_rate_row(workspace, table, item, key_prefix) for item in items]
     if total:
         rows.append(_total_row(workspace.state.costs))
-    return _bordered(rows)
+    return c.table(rows)
 
 
 def _head_band() -> ft.Control:
@@ -460,49 +458,50 @@ def _head_band() -> ft.Control:
 def _rate_headings() -> ft.Control:
     """The day types, each heading the field beneath it."""
     return c.row([
-        c.cell(
-            t.label("Item", t.COLUMN_HEADER),
-            flex=LABEL_FLEX,
-            align=ft.Alignment.CENTER_LEFT,
-            bgcolor=t.TABLE_HEADER,
-        ),
+        c.heading_cell("Item", flex=LABEL_FLEX, align=ft.Alignment.CENTER_LEFT),
         *[
-            c.cell(
-                t.label(day_type, t.COLUMN_HEADER),
-                flex=FIELD_FLEX,
-                bgcolor=HEAD_TINTS[head][1],
-            )
+            c.heading_cell(day_type, flex=FIELD_FLEX, bgcolor=HEAD_TINTS[head][1])
             for head, day_type in data.RATE_COLUMNS
         ],
     ])
 
 
-def _rate_row(workspace: Workspace, table: str, item: str, prefix: str) -> ft.Control:
-    """One item and its four rates, each a field in place."""
+def _item_cell(item: str) -> ft.Container:
+    """A commodity's tile and name, at the head of its row."""
     icon, colors = ITEM_TILES[item]
-    return c.row([
-        c.cell(
-            ft.Row(
-                spacing=t.SPACE_1,
-                controls=[
-                    c.icon_tile(icon, colors),
-                    ft.Text(_item_label(item), style=t.CELL, expand=True),
-                ],
-            ),
-            flex=LABEL_FLEX,
-            align=None,
+    return c.cell(
+        ft.Row(
+            spacing=t.SPACE_1,
+            controls=[
+                c.icon_tile(icon, colors),
+                ft.Text(_item_label(item), style=t.CELL, expand=True),
+            ],
         ),
+        flex=LABEL_FLEX,
+        align=None,
+    )
+
+
+def _number_cell(field: ft.TextField) -> ft.Container:
+    """A number field inside a table cell."""
+    return c.cell(field, flex=FIELD_FLEX, padding=(3, 4))
+
+
+def _rate_row(
+    workspace: Workspace, table: str, item: str, key_prefix: str
+) -> ft.Control:
+    """One item and its four rates, each a field in place."""
+    return c.row([
+        _item_cell(item),
         *[
-            c.cell(
+            _number_cell(
                 c.number_field(
                     _rate(workspace.state, table, item, head, day_type),
-                    key=f"{prefix}-{item}-{head}-{day_type}",
+                    key=f"{key_prefix}-{item}-{head}-{day_type}",
                     on_change=partial(
                         _set_rate, workspace, table, item, head, day_type
                     ),
-                ),
-                flex=FIELD_FLEX,
-                padding=(3, 4),
+                )
             )
             for head, day_type in data.RATE_COLUMNS
         ],
@@ -579,20 +578,19 @@ def _attendance(workspace: Workspace) -> ft.Control:
 def _holidays(workspace: Workspace) -> ft.Control:
     """The month's closed days, as chips, and the way to close another."""
     closed = workspace.state.holidays()
-    listed: ft.Control = (
-        ft.Row(
+    if closed:
+        listed: ft.Control = ft.Row(
             wrap=True,
             spacing=10,
             run_spacing=10,
             controls=[_chip(workspace, day) for day in closed],
         )
-        if closed
-        else c.empty_state(
+    else:
+        listed = c.empty_state(
             ft.Icons.CALENDAR_MONTH,
             "No closed days this month",
             "Every day is a working day.",
         )
-    )
     return ft.Column(
         spacing=t.SPACE_3,
         horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
@@ -652,26 +650,15 @@ def _attendance_grid(workspace: Workspace) -> ft.Control:
     days = list(data.days_in(state.month))
     rows: list[ft.Control] = [
         c.row([
-            c.cell(
-                t.label("Date", t.COLUMN_HEADER),
-                flex=DATE_FLEX,
-                align=ft.Alignment.CENTER_LEFT,
-                bgcolor=t.TABLE_HEADER,
-            ),
-            c.cell(
-                t.label("Mother", t.COLUMN_HEADER),
-                flex=FIELD_FLEX,
-                bgcolor=HEAD_TINTS[MOTHER][1],
-            ),
-            c.cell(
-                t.label("Children", t.COLUMN_HEADER),
-                flex=FIELD_FLEX,
-                bgcolor=HEAD_TINTS[CHILDREN][1],
+            c.heading_cell("Date", flex=DATE_FLEX, align=ft.Alignment.CENTER_LEFT),
+            c.heading_cell("Mother", flex=FIELD_FLEX, bgcolor=HEAD_TINTS[MOTHER][1]),
+            c.heading_cell(
+                "Children", flex=FIELD_FLEX, bgcolor=HEAD_TINTS[CHILDREN][1]
             ),
         ]),
         *[_attendance_row(workspace, day, last=day == days[-1]) for day in days],
     ]
-    return _bordered(rows)
+    return c.table(rows)
 
 
 def _attendance_row(
@@ -680,7 +667,6 @@ def _attendance_row(
     """A day's two counts. A closed day carries none, so its cells stay empty."""
     state = workspace.state
     closed = state.is_holiday(day)
-    mothers, children = state.counts(day)
     return c.row(
         [
             c.cell(
@@ -690,26 +676,19 @@ def _attendance_row(
                 flex=DATE_FLEX,
                 align=ft.Alignment.CENTER_LEFT,
             ),
-            c.cell(
-                c.number_field(
-                    None if closed else mothers,
-                    key=f"attendance-{day.isoformat()}-mothers",
-                    on_change=partial(_set_counts, workspace, day, "mothers"),
-                    disabled=closed,
-                ),
-                flex=FIELD_FLEX,
-                padding=(3, 4),
-            ),
-            c.cell(
-                c.number_field(
-                    None if closed else children,
-                    key=f"attendance-{day.isoformat()}-children",
-                    on_change=partial(_set_counts, workspace, day, "children"),
-                    disabled=closed,
-                ),
-                flex=FIELD_FLEX,
-                padding=(3, 4),
-            ),
+            *[
+                _number_cell(
+                    c.number_field(
+                        None if closed else count,
+                        key=f"attendance-{day.isoformat()}-{head}",
+                        on_change=partial(_set_counts, workspace, day, head),
+                        disabled=closed,
+                    )
+                )
+                for head, count in zip(
+                    ("mothers", "children"), state.counts(day), strict=True
+                )
+            ],
         ],
         bgcolor=t.CLOSED_ROW if closed else None,
         rule=not last,
@@ -746,49 +725,29 @@ def _opening_stock_table(workspace: Workspace) -> ft.Control:
     state = workspace.state
     rows: list[ft.Control] = [
         c.row([
-            c.cell(
-                t.label("Commodity", t.COLUMN_HEADER),
-                flex=LABEL_FLEX,
-                align=ft.Alignment.CENTER_LEFT,
-                bgcolor=t.TABLE_HEADER,
+            c.heading_cell(
+                "Commodity", flex=LABEL_FLEX, align=ft.Alignment.CENTER_LEFT
             ),
-            c.cell(
-                t.label("Opening", t.COLUMN_HEADER),
-                flex=FIELD_FLEX,
-                bgcolor=t.TABLE_HEADER,
-            ),
+            c.heading_cell("Opening", flex=FIELD_FLEX),
         ])
     ]
     for item in data.STOCK_ITEMS:
-        icon, colors = ITEM_TILES[item]
         rows.append(
             c.row(
                 [
-                    c.cell(
-                        ft.Row(
-                            spacing=t.SPACE_1,
-                            controls=[
-                                c.icon_tile(icon, colors),
-                                ft.Text(_item_label(item), style=t.CELL, expand=True),
-                            ],
-                        ),
-                        flex=LABEL_FLEX,
-                        align=None,
-                    ),
-                    c.cell(
+                    _item_cell(item),
+                    _number_cell(
                         c.number_field(
                             _opening_stock(state, item),
                             key=f"opening-{item}",
                             on_change=partial(_set_opening, workspace, item),
-                        ),
-                        flex=FIELD_FLEX,
-                        padding=(3, 4),
+                        )
                     ),
                 ],
                 rule=item != data.STOCK_ITEMS[-1],
             )
         )
-    return _bordered(rows)
+    return c.table(rows)
 
 
 def _deliveries(workspace: Workspace) -> ft.Column:
@@ -901,17 +860,6 @@ def _report(workspace: Workspace) -> ft.Control:
                 _sheet_switch(workspace),
                 report_ui.hint(),
                 report_ui.sheet(workspace.state, workspace.report_sheet),
-                *(
-                    [
-                        c.banner(
-                            ft.Icons.ERROR_OUTLINE,
-                            "Couldn't save the file",
-                            workspace.notice,
-                        )
-                    ]
-                    if workspace.notice
-                    else []
-                ),
             ],
         ),
         expand=True,
@@ -940,19 +888,6 @@ def _sheet_switch(workspace: Workspace) -> ft.SegmentedButton:
             text_style=ft.TextStyle(size=13, weight=ft.FontWeight.W_600),
         ),
         on_change=partial(_switch_sheet, workspace),
-    )
-
-
-# Building blocks
-
-
-def _bordered(rows: list[ft.Control]) -> ft.Container:
-    """A table: its rows on a rounded outline."""
-    return ft.Container(
-        border=t.hairline(),
-        border_radius=t.RADIUS_BAND,
-        clip_behavior=ft.ClipBehavior.ANTI_ALIAS,
-        content=ft.Column(spacing=0, controls=rows),
     )
 
 
@@ -992,11 +927,28 @@ def _month_keys(state: State) -> list[str]:
     return keys
 
 
+def _month_option(workspace: Workspace, key: str) -> ft.Container:
+    """One month in the picker, ticked when it is the open one."""
+    current = key == workspace.state.month
+    return ft.Container(
+        key=f"month-{key}",
+        height=40,
+        padding=ft.Padding.symmetric(horizontal=8),
+        bgcolor=t.PRIMARY_100 if current else None,
+        border_radius=t.RADIUS_FIELD,
+        on_click=partial(_open_month, workspace, key),
+        content=ft.Row(
+            controls=[
+                ft.Text(data.month_label(key), style=t.CELL, expand=True),
+                ft.Icon(ft.Icons.CHECK, size=16, color=t.PRIMARY_600, visible=current),
+            ]
+        ),
+    )
+
+
 def _pick_month(workspace: Workspace, event: Any = None) -> None:
     """Offer the months, newest first, with the open month ticked."""
-    page = ft.context.page
-    current = workspace.state.month
-    page.show_dialog(
+    ft.context.page.show_dialog(
         ft.AlertDialog(
             modal=True,
             title=t.label("Month", t.DIALOG_TITLE),
@@ -1005,30 +957,7 @@ def _pick_month(workspace: Workspace, event: Any = None) -> None:
                 height=340,
                 scroll=ft.ScrollMode.AUTO,
                 controls=[
-                    ft.Container(
-                        key=f"month-{key}",
-                        height=40,
-                        padding=ft.Padding.symmetric(horizontal=8),
-                        bgcolor=t.PRIMARY_100 if key == current else None,
-                        border_radius=t.RADIUS_FIELD,
-                        on_click=partial(_open_month, workspace, key),
-                        content=ft.Row(
-                            controls=[
-                                ft.Text(
-                                    data.month_label(key), style=t.CELL, expand=True
-                                ),
-                                *(
-                                    [
-                                        ft.Icon(
-                                            ft.Icons.CHECK, size=16, color=t.PRIMARY_600
-                                        )
-                                    ]
-                                    if key == current
-                                    else []
-                                ),
-                            ]
-                        ),
-                    )
+                    _month_option(workspace, key)
                     for key in _month_keys(workspace.state)
                 ],
             ),
@@ -1043,6 +972,20 @@ def _open_month(workspace: Workspace, key: str, event: Any = None) -> None:
     workspace.rebuild()
 
 
+def _commit(
+    workspace: Workspace, event: ft.Event[ft.TextField], apply: Callable[[int], None]
+) -> None:
+    """Read a number field, apply the value it holds, and save.
+
+    Unreadable text leaves the value as it was; blank means 0.
+    """
+    value = _whole(event.control.value)
+    if value is None:
+        return
+    apply(value)
+    workspace.touch()
+
+
 def _set_rate(
     workspace: Workspace,
     table: str,
@@ -1052,33 +995,33 @@ def _set_rate(
     event: ft.Event[ft.TextField],
 ) -> None:
     """Record one rate. A blank field means 0, which means not served."""
-    value = _whole(event.control.value)
-    if value is None:
-        return
-    getattr(workspace.state, table).loc[item, (head, day_type)] = value
-    workspace.touch()
+
+    def apply(value: int) -> None:
+        getattr(workspace.state, table).loc[item, (head, day_type)] = value
+
+    _commit(workspace, event, apply)
 
 
 def _set_opening(
     workspace: Workspace, item: str, event: ft.Event[ft.TextField]
 ) -> None:
     """Record one commodity's opening stock."""
-    value = _whole(event.control.value)
-    if value is None:
-        return
-    workspace.state.opening.loc[item, "opening"] = value
-    workspace.touch()
+
+    def apply(value: int) -> None:
+        workspace.state.opening.loc[item, "opening"] = value
+
+    _commit(workspace, event, apply)
 
 
 def _set_counts(
     workspace: Workspace, day: date, head: str, event: ft.Event[ft.TextField]
 ) -> None:
     """Record one of a day's two counts, leaving the other as it was."""
-    value = _whole(event.control.value)
-    if value is None:
-        return
-    workspace.state.set_count(day, head, value)
-    workspace.touch()
+
+    def apply(value: int) -> None:
+        workspace.state.set_count(day, head, value)
+
+    _commit(workspace, event, apply)
 
 
 def _retry(workspace: Workspace, event: Any = None) -> None:
@@ -1149,11 +1092,11 @@ def _set_delivery_amount(
     workspace: Workspace, index: int, event: ft.Event[ft.TextField]
 ) -> None:
     """Record how much a delivery brought."""
-    value = _whole(event.control.value)
-    if value is None:
-        return
-    workspace.state.set_delivery(index, amount=value)
-    workspace.touch()
+
+    def apply(value: int) -> None:
+        workspace.state.set_delivery(index, amount=value)
+
+    _commit(workspace, event, apply)
 
 
 def _pick_delivery_day(workspace: Workspace, index: int, event: Any = None) -> None:
@@ -1196,17 +1139,14 @@ async def _export(workspace: Workspace, kind: str, event: Any = None) -> None:
         if kind == "csv"
         else export.pdf_bytes("ICDS Reports", month, chosen.title, headings, rows)
     )
-    workspace.notice = ""
     if workspace.files is None:
         return
-    saved = await workspace.files.save_file(
+    await workspace.files.save_file(
         dialog_title=f"Save {chosen.title}",
         file_name=export.file_name(chosen.title, month, kind),
         allowed_extensions=[kind],
         src_bytes=content,
     )
-    if saved is not None:
-        workspace.rebuild()
 
 
 def _ask_to_reset(workspace: Workspace, event: Any = None) -> None:

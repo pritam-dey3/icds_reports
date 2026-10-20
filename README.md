@@ -83,8 +83,9 @@ tested without starting an app.
 
 ### Defaults
 
-`src/assets/defaults/` holds the starting values, and every one of them is editable in
-the app:
+`src/data/` holds the starting values, and every one of them is editable in the app.
+They sit beside the code rather than in `src/assets/`, which a web build serves over
+HTTP and pandas cannot read from the browser filesystem:
 
 | File | Holds |
 |---|---|

@@ -40,9 +40,8 @@ async def main(page: ft.Page) -> None:
         record = store.Saved(workspace.state, workspace.step, workspace.report_sheet)
         async with writes:
             landed = await store.save(prefs, record)
-        already_warned = workspace.saved is False
-        workspace.saved = landed
-        if not landed and not already_warned:
+        if not landed and not workspace.failure_shown:
+            workspace.failure_shown = True
             ui.save_failed(workspace, page)
 
     def save() -> None:

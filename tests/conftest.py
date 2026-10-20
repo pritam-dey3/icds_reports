@@ -27,12 +27,6 @@ class FakePrefs(ft.SharedPreferences):
         return self.values.pop(key, None) is not None
 
 
-@pytest.fixture(autouse=True)
-def isolated_assets(monkeypatch):
-    """A packaged app sets this; a test must never inherit it from a running build."""
-    monkeypatch.delenv("FLET_ASSETS_DIR", raising=False)
-
-
 @pytest.fixture
 def prefs() -> FakePrefs:
     """A fresh store, for the length of one test."""

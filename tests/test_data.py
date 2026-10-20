@@ -108,14 +108,13 @@ def test_a_fresh_month_is_complete_date_indexed_and_closed_on_sundays():
 
 def test_a_sheet_with_one_heading_per_column_reads_the_same_way(monkeypatch, tmp_path):
     """An office sheet written as `Mother MWF` rather than the two-row form reads."""
-    (tmp_path / "defaults").mkdir()
-    (tmp_path / "defaults" / "per_head_costs_paisa.csv").write_text(
+    (tmp_path / "per_head_costs_paisa.csv").write_text(
         "item,Mother MWF,Mother TTS,Children MWF,Children TTS\n"
         "egg,850,850,850,0\n"
         "total,850,850,850,0\n",
         encoding="utf-8",
     )
-    monkeypatch.setenv("FLET_ASSETS_DIR", str(tmp_path))
+    monkeypatch.setattr(data, "data_dir", lambda: tmp_path)
 
     costs = data.cost_defaults()
 
@@ -124,11 +123,10 @@ def test_a_sheet_with_one_heading_per_column_reads_the_same_way(monkeypatch, tmp
 
 
 def test_a_sheet_without_an_item_column_is_rejected(monkeypatch, tmp_path):
-    (tmp_path / "defaults").mkdir()
-    (tmp_path / "defaults" / "per_head_costs_paisa.csv").write_text(
+    (tmp_path / "per_head_costs_paisa.csv").write_text(
         "whatever\n1\n", encoding="utf-8"
     )
-    monkeypatch.setenv("FLET_ASSETS_DIR", str(tmp_path))
+    monkeypatch.setattr(data, "data_dir", lambda: tmp_path)
 
     with pytest.raises(ValueError):
         data.cost_defaults()

@@ -1,14 +1,13 @@
 """The app's inputs as data: the shipped defaults, item labels, months, attendance.
 
-The three bundled sheets in `assets/defaults` are the starting values for the cost
-table, the per-head inventory table and the opening stock. They are read once into
-the shapes `calculation` expects, so a user edit never touches the files.
+The three bundled sheets in `data/` are the starting values for the cost table, the
+per-head inventory table and the opening stock. They are read once into the shapes
+`calculation` expects, so a user edit never touches the files.
 
 A per-head sheet is turned into the shape the calculation works with: one row per
 item, and one column per `(head, day type)` pair.
 """
 
-import os
 from collections.abc import Iterator
 from datetime import date, timedelta
 from pathlib import Path
@@ -64,14 +63,14 @@ ITEM_UNITS = {
 MONTHS_OFFERED = 12
 
 
-def assets_dir() -> Path:
-    """The directory the app's bundled files live in.
+def data_dir() -> Path:
+    """The directory the bundled sheets live in.
 
-    A packaged build sets `FLET_ASSETS_DIR`; a plain `flet run` serves `assets/`
-    next to `main.py`, which is where these defaults sit.
+    It sits next to this module, so it is part of the app the build ships to every
+    platform. It is deliberately not `assets/`: a web build serves that folder over
+    HTTP, so pandas could not open a file in it from the Pyodide filesystem.
     """
-    packaged = os.environ.get("FLET_ASSETS_DIR")
-    return Path(packaged) if packaged else Path(__file__).parent / "assets"
+    return Path(__file__).parent / "data"
 
 
 def cost_defaults() -> pd.DataFrame:
@@ -90,7 +89,7 @@ def opening_defaults() -> pd.DataFrame:
     The sheet's own heading is kept flexible — the value is whichever column follows
     the commodity names — so a sheet written by an office still reads.
     """
-    sheet = pd.read_csv(assets_dir() / "defaults" / "initial_inventory.csv")
+    sheet = pd.read_csv(data_dir() / "initial_inventory.csv")
     sheet = sheet.set_index(sheet.columns[0])
     values = pd.to_numeric(sheet.iloc[:, 0], errors="coerce")
     return pd.DataFrame({"opening": values})
@@ -108,7 +107,7 @@ def per_head_sheet(name: str) -> pd.DataFrame:
     Raises:
         ValueError: If the sheet has no `item` column of its own.
     """
-    path = assets_dir() / "defaults" / name
+    path = data_dir() / name
     headings = pd.read_csv(path, nrows=0).columns.tolist()
     if "item" in headings:
         return _flat_heading_sheet(path)

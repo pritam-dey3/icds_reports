@@ -109,6 +109,27 @@ def row(
     )
 
 
+def table(rows: list[ft.Control]) -> ft.Container:
+    """A table: its rows on a rounded outline."""
+    return ft.Container(
+        border=t.hairline(),
+        border_radius=t.RADIUS_BAND,
+        clip_behavior=ft.ClipBehavior.ANTI_ALIAS,
+        content=ft.Column(spacing=0, controls=rows),
+    )
+
+
+def heading_cell(
+    text: str,
+    *,
+    flex: int,
+    bgcolor: str = t.TABLE_HEADER,
+    align: ft.Alignment | None = ft.Alignment.CENTER_RIGHT,
+) -> ft.Container:
+    """A column heading, on the band that groups it."""
+    return cell(t.label(text, t.COLUMN_HEADER), flex=flex, bgcolor=bgcolor, align=align)
+
+
 def number_field(
     value: object, *, key: str, on_change, flex: int = 1, disabled: bool = False
 ) -> ft.TextField:
@@ -237,33 +258,6 @@ def empty_state(icon: ft.IconData, title: str, body: str) -> ft.Container:
                 ),
                 t.label(title, t.EMPTY_TITLE),
                 t.label(body, t.EMPTY_BODY),
-            ],
-        ),
-    )
-
-
-def banner(
-    icon: ft.IconData, title: str, body: str, *, ink: str = t.DANGER
-) -> ft.Container:
-    """A problem inside a card that the user can read and act on."""
-    return ft.Container(
-        bgcolor=ft.Colors.with_opacity(0.08, ink),
-        border=ft.Border.all(1, ft.Colors.with_opacity(0.3, ink)),
-        border_radius=t.RADIUS_FIELD,
-        padding=t.SPACE_3,
-        content=ft.Row(
-            spacing=10,
-            vertical_alignment=ft.CrossAxisAlignment.START,
-            controls=[
-                ft.Icon(icon, size=20, color=ink),
-                ft.Column(
-                    spacing=2,
-                    expand=True,
-                    controls=[
-                        t.label(title, t.EMPTY_TITLE),
-                        t.label(body, t.EMPTY_BODY),
-                    ],
-                ),
             ],
         ),
     )
