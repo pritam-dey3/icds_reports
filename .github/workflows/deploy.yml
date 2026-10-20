@@ -75,6 +75,11 @@ jobs:
           fi
           echo "Building with base URL $base_url"
           uv run flet publish --distpath dist --base-url "$base_url" --no-cdn
+          # Flet 1.0.4 emits a bare `pyodide/pyodide.mjs` module specifier and
+          # ships only the bare Pyodide runtime, so the worker fails to import
+          # it and micropip cannot fetch pandas/numpy offline. This repairs
+          # both. Drop it once `flet publish --no-cdn` does this itself.
+          uv run scripts/fix_no_cdn.py dist
 
       # Pages runs Jekyll by default, which drops files and folders starting
       # with an underscore. The app needs no Jekyll processing at all.
