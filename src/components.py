@@ -11,7 +11,7 @@ import theme as t
 
 
 def icon_tile(
-    icon: ft.IconData, colors: tuple[str, str], *, size: int = 32
+    icon: ft.IconData, colors: tuple[str, str], *, size: int = 24
 ) -> ft.Container:
     """A pastel circle carrying a commodity's or a section's glyph."""
     background, ink = colors
@@ -36,7 +36,7 @@ def card(
         border=t.hairline(),
         border_radius=t.RADIUS_CARD,
         shadow=t.card_shadow(),
-        padding=t.SPACE_4,
+        padding=t.SPACE_3,
         content=content,
     )
 
@@ -45,13 +45,12 @@ def section(
     icon: ft.IconData,
     colors: tuple[str, str],
     title: str,
-    subtitle: str,
     content: ft.Control,
     *,
     key: str | None = None,
     expand: bool = False,
 ) -> ft.Container:
-    """A card whose first line names the section and the rule it follows.
+    """A card whose first line names the section.
 
     `expand` lets a section fill the screen and hand the spare height to its content,
     which is how the report gives the table a viewport of its own.
@@ -59,21 +58,14 @@ def section(
     return card(
         ft.Column(
             expand=expand,
-            spacing=t.SPACE_4,
+            spacing=t.SPACE_3,
             controls=[
                 ft.Row(
-                    spacing=t.SPACE_3,
-                    vertical_alignment=ft.CrossAxisAlignment.START,
+                    spacing=t.SPACE_2,
+                    vertical_alignment=ft.CrossAxisAlignment.CENTER,
                     controls=[
-                        icon_tile(icon, colors, size=44),
-                        ft.Column(
-                            spacing=t.SPACE_1,
-                            expand=True,
-                            controls=[
-                                t.label(title, t.CARD_TITLE),
-                                t.label(subtitle, t.CARD_SUBTITLE),
-                            ],
-                        ),
+                        icon_tile(icon, colors, size=34),
+                        ft.Text(title, style=t.CARD_TITLE, expand=True),
                     ],
                 ),
                 content,
@@ -88,11 +80,15 @@ def cell(
     content: ft.Control | None,
     *,
     flex: int = 1,
-    align: ft.Alignment = ft.Alignment.CENTER_RIGHT,
+    align: ft.Alignment | None = ft.Alignment.CENTER_RIGHT,
     bgcolor: str | None = None,
-    padding: tuple[int, int] = (8, 10),
+    padding: tuple[int, int] = (6, 6),
 ) -> ft.Container:
-    """One table cell: a fixed share of the row, padded and aligned."""
+    """One table cell: a fixed share of the row, padded and aligned.
+
+    `align=None` stretches the content across the cell, which is what a row of
+    several pieces needs; a plain value is aligned inside the cell instead.
+    """
     return ft.Container(
         expand=flex,
         bgcolor=bgcolor,
@@ -127,9 +123,9 @@ def number_field(
         expand=flex,
         dense=True,
         max_lines=1,
-        text_size=16,
+        text_size=14,
         text_style=ft.TextStyle(
-            size=16,
+            size=14,
             weight=ft.FontWeight.W_500,
             color=t.TEXT_TERTIARY if disabled else t.TEXT,
         ),
@@ -139,7 +135,7 @@ def number_field(
         border=None if disabled else _field_border(),
         filled=True,
         fill_color=t.CLOSED_FIELD if disabled else t.SURFACE,
-        content_padding=ft.Padding.symmetric(horizontal=8, vertical=11),
+        content_padding=ft.Padding.symmetric(horizontal=6, vertical=7),
         disabled=disabled,
         on_change=on_change,
     )
@@ -217,10 +213,10 @@ def _button_style(variant: str) -> ft.ButtonStyle:
         color=ink,
         side=side,
         elevation=0,
-        padding=ft.Padding.symmetric(horizontal=20, vertical=15),
+        padding=ft.Padding.symmetric(horizontal=16, vertical=10),
         shape=ft.RoundedRectangleBorder(radius=t.RADIUS_PILL),
         text_style=t.BUTTON,
-        icon_size=20,
+        icon_size=18,
     )
 
 
@@ -230,14 +226,14 @@ def empty_state(icon: ft.IconData, title: str, body: str) -> ft.Container:
         bgcolor=t.PRIMARY_050,
         border=t.field_border(),
         border_radius=t.RADIUS_CARD,
-        padding=t.SPACE_6,
+        padding=t.SPACE_4,
         alignment=ft.Alignment.CENTER,
         content=ft.Column(
             spacing=t.SPACE_2,
             horizontal_alignment=ft.CrossAxisAlignment.CENTER,
             controls=[
                 ft.Icon(
-                    icon, size=40, color=ft.Colors.with_opacity(0.7, t.PRIMARY_600)
+                    icon, size=30, color=ft.Colors.with_opacity(0.7, t.PRIMARY_600)
                 ),
                 t.label(title, t.EMPTY_TITLE),
                 t.label(body, t.EMPTY_BODY),

@@ -7,6 +7,7 @@ __pycache__/
 venv/
 env/
 dump/*
+agent-tasks/
 # Environments / secrets
 .env
 

@@ -9,6 +9,7 @@ from typing import Any
 
 import flet as ft
 import pytest
+from flet_datatable2 import DataColumn2, DataTable2
 
 import data
 import report_ui
@@ -426,32 +427,36 @@ def test_the_register_sheet_carries_its_own_columns(workspace):
     assert "Total egg cost" not in shown
 
 
-def test_the_report_freezes_the_date_and_the_header_and_scrolls_the_figures(workspace):
-    step = report_ui.sheet(workspace.state, report_ui.SABJI)
+def report_table(workspace) -> DataTable2:
+    """The sabji sheet's table, once the card's container is opened."""
+    sheet = report_ui.sheet(workspace.state, report_ui.SABJI)
+    assert isinstance(sheet, ft.Container)
+    assert isinstance(sheet.content, DataTable2)
+    return sheet.content
 
-    assert isinstance(step, ft.Column)
-    header, body = kids(step)
-    # The header strip is above the scroll region, so it cannot scroll away.
-    corner, bands = kids(header)
-    assert isinstance(bands, ft.Row)
-    assert bands.scroll is not None
-    # The body holds the pinned date column beside the figures, and scrolls downwards.
-    assert isinstance(body, ft.Column)
-    assert body.scroll is not None
-    dates, figures = kids(kids(body)[0])
-    assert isinstance(dates, ft.Container)
-    assert dates.border is not None
-    assert figures.scroll is not None
+
+def date_cell(table: DataTable2, day: str) -> ft.Container:
+    """The box a day's date cell wraps."""
+    for row in table.rows:
+        box = row.cells[0].content
+        if isinstance(box, ft.Container) and texts(box) == [day]:
+            return box
+    raise AssertionError(f"no date cell for {day}")
+
+
+def test_the_report_pins_the_date_and_the_heading_and_scrolls_the_figures(workspace):
+    table = report_table(workspace)
+
+    # The heading row and the date column are the two the table holds still.
+    assert table.fixed_top_rows == 1
+    assert table.fixed_left_columns == 1
+    assert isinstance(table.columns[0], DataColumn2)
+    assert table.columns[0].fixed_width == report_ui.DATE_WIDTH
+    assert "Total" in texts(table.rows[-1].cells[0])
 
 
 def test_a_closed_day_is_tinted_in_the_report(workspace):
-    step = report_ui.sheet(workspace.state, report_ui.SABJI)
-    _, body = kids(step)
-    dates = kids(kids(body)[0])[0]
-
-    closed = next(box for box in kids(dates.content) if texts(box) == ["Sun 04"])
-
-    assert closed.bgcolor == theme.CLOSED_ROW
+    assert date_cell(report_table(workspace), "Sun 04").bgcolor == theme.CLOSED_ROW
 
 
 # Stepping, months, reset

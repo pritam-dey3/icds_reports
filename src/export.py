@@ -1,8 +1,10 @@
 """Turning a report into a file: a CSV for a spreadsheet, a PDF for the office.
 
 Both exports take the same headings and rows the screen shows, so the file can never
-disagree with the table it came from. The PDF is written by hand — a landscape A4 page
-of fixed-width text — because the app has no room for a typesetting library.
+disagree with the table it came from. The PDF is written by hand — landscape A4 pages
+of fixed-width text — because the app has no room for a typesetting library. A sheet
+wider than the page is split into column runs, and every page repeats the date column
+and the headings, so nothing is shrunk or cut to fit.
 """
 
 import csv
@@ -12,12 +14,18 @@ import re
 # A landscape A4 page, in points.
 PAGE_WIDTH = 842
 PAGE_HEIGHT = 595
-MARGIN = 24
-FONT_SIZE = 6
-LEADING = 10
+MARGIN = 28
+FONT_SIZE = 9
+LEADING = 13
+
+# The room the title block takes above the table, in points.
+TITLE_HEIGHT = 56
 
 # How many characters of that font fit across the page's live area.
-COLUMNS = 200
+COLUMNS = 144
+
+# The date column is repeated on every page; a figure column never grows past this.
+MAX_COLUMN = 60
 
 
 def csv_bytes(headings: list[str], rows: list[list[str]]) -> bytes:
@@ -32,9 +40,8 @@ def csv_bytes(headings: list[str], rows: list[list[str]]) -> bytes:
 def pdf_bytes(
     title: str, month: str, sheet: str, headings: list[str], rows: list[list[str]]
 ) -> bytes:
-    """The sheet as a printable landscape page, with its own title block."""
-    lines = _layout(headings, rows)
-    return _document(_content(title, month, sheet, lines))
+    """The sheet as printable landscape pages, with its own title block."""
+    return _document(_pages(title, month, sheet, headings, rows))
 
 
 def file_name(sheet: str, month: str, extension: str) -> str:
@@ -47,26 +54,34 @@ def _slug(value: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", value.lower()).strip("-")
 
 
-def _layout(headings: list[str], rows: list[list[str]]) -> list[str]:
-    """The sheet as monospaced lines: a heading, a rule, then every row."""
-    widths = _widths(headings, rows)
-    return [
-        _line(headings, widths),
-        "-" * sum(widths),
-        *[_line(row, widths) for row in rows],
-    ]
-
-
 def _widths(headings: list[str], rows: list[list[str]]) -> list[int]:
-    """A share of the page per column, squeezed evenly when the sheet is wide."""
-    wanted = [
-        max(len(heading), *(len(row[index]) for row in rows)) + 2
+    """A natural width per column: its longest value with a margin, up to a cap."""
+    return [
+        min(MAX_COLUMN, max([len(heading), *(len(row[index]) for row in rows)]) + 2)
         for index, heading in enumerate(headings)
     ]
-    total = sum(wanted)
-    if total <= COLUMNS:
-        return wanted
-    return [max(7, int(width * COLUMNS / total)) for width in wanted]
+
+
+def _column_groups(widths: list[int]) -> list[list[int]]:
+    """The figure columns split into runs that fit beside the date on one page.
+
+    The date is the first column and is repeated on every page; the figure columns
+    are packed greedily in sheet order so a run never has to be squeezed.
+    """
+    room = COLUMNS - widths[0]
+    groups: list[list[int]] = []
+    current: list[int] = []
+    used = 0
+    for index in range(1, len(widths)):
+        width = widths[index]
+        if current and used + width > room:
+            groups.append(current)
+            current, used = [], 0
+        current.append(index)
+        used += width
+    if current:
+        groups.append(current)
+    return groups or [[]]
 
 
 def _line(values: list[str], widths: list[int]) -> str:
@@ -89,15 +104,59 @@ def _numeric(value: str) -> bool:
     return bool(value)
 
 
-def _content(title: str, month: str, sheet: str, lines: list[str]) -> bytes:
-    """The page's text: a title block, then the sheet."""
-    top = PAGE_HEIGHT - MARGIN - 12
+def _pages(
+    title: str, month: str, sheet: str, headings: list[str], rows: list[list[str]]
+) -> list[bytes]:
+    """One content stream per page: a column run, split again if it runs long.
+
+    Each page carries its own heading and rule, so a figures page read on its own
+    still says what its columns are. The date column travels with every run.
+    """
+    widths = _widths(headings, rows)
+    room = _room()
+    blocks: list[tuple[list[int], list[str]]] = []
+    for group in _column_groups(widths):
+        chosen = [0, *group]
+        lines = [
+            _line([row[index] for index in chosen], [widths[index] for index in chosen])
+            for row in rows
+        ]
+        for start in range(0, max(len(lines), 1), room):
+            blocks.append((chosen, lines[start : start + room]))
+    total = len(blocks)
+    return [
+        _content(title, month, sheet, headings, widths, chosen, lines, number, total)
+        for number, (chosen, lines) in enumerate(blocks, start=1)
+    ]
+
+
+def _room() -> int:
+    """How many table lines fit between the title block and the bottom margin."""
+    return (PAGE_HEIGHT - 2 * MARGIN - TITLE_HEIGHT) // LEADING - 2
+
+
+def _content(
+    title: str,
+    month: str,
+    sheet: str,
+    headings: list[str],
+    widths: list[int],
+    chosen: list[int],
+    lines: list[str],
+    number: int,
+    total: int,
+) -> bytes:
+    """One page's text: a title block, the column headings, then the rows."""
+    top = PAGE_HEIGHT - MARGIN
+    lead = _line(
+        [headings[index] for index in chosen], [widths[index] for index in chosen]
+    )
+    rule = "-" * sum(widths[index] for index in chosen)
     text = [
-        _text(f"{title} — {sheet}", "F2", 12, MARGIN, top),
-        _text(month, "F1", 9, MARGIN, top - 16),
-        _text("", "F1", FONT_SIZE, MARGIN, top - 34),
-        f"BT /F1 {FONT_SIZE} Tf {LEADING} TL {MARGIN} {top - 34} Td",
-        *[f"({_escape(line)}) Tj T*" for line in lines],
+        _text(f"{title} — {sheet}", "F2", 14, MARGIN, top - 14),
+        _text(f"{month} · Page {number} of {total}", "F1", 9, MARGIN, top - 36),
+        f"BT /F1 {FONT_SIZE} Tf {LEADING} TL {MARGIN} {top - TITLE_HEIGHT} Td",
+        *[f"({_escape(line)}) Tj T*" for line in (lead, rule, *lines)],
         "ET",
     ]
     return "\n".join(text).encode("cp1252", "replace")
@@ -113,24 +172,39 @@ def _escape(value: str) -> str:
     return value.replace("\\", r"\\").replace("(", r"\(").replace(")", r"\)")
 
 
-def _document(stream: bytes) -> bytes:
-    """Wrap a content stream in a single-page PDF, with its cross-reference table."""
-    objects = [
+def _document(pages: list[bytes]) -> bytes:
+    """Wrap each content stream in its own page, with one cross-reference table."""
+    first_page = 3
+    kids = " ".join(f"{first_page + 2 * index} 0 R" for index in range(len(pages)))
+    courier = 3 + 2 * len(pages)
+    bold = courier + 1
+    objects: list[bytes] = [
         b"<< /Type /Catalog /Pages 2 0 R >>",
-        b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
-        (
-            f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 {PAGE_WIDTH} {PAGE_HEIGHT}] "
-            "/Resources << /Font << /F1 5 0 R /F2 6 0 R >> >> /Contents 4 0 R >>"
-        ).encode("ascii"),
-        b"<< /Length "
-        + str(len(stream)).encode("ascii")
-        + b" >>\nstream\n"
-        + stream
-        + b"\nendstream",
-        b"<< /Type /Font /Subtype /Type1 /BaseFont /Courier /Encoding /WinAnsiEncoding >>",
-        b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold "
-        b"/Encoding /WinAnsiEncoding >>",
+        f"<< /Type /Pages /Kids [{kids}] /Count {len(pages)} >>".encode("ascii"),
     ]
+    for stream in pages:
+        number = len(objects) + 1
+        objects.append(
+            (
+                f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 {PAGE_WIDTH} {PAGE_HEIGHT}] "
+                f"/Resources << /Font << /F1 {courier} 0 R /F2 {bold} 0 R >> >> "
+                f"/Contents {number + 1} 0 R >>"
+            ).encode("ascii")
+        )
+        objects.append(
+            b"<< /Length "
+            + str(len(stream)).encode("ascii")
+            + b" >>\nstream\n"
+            + stream
+            + b"\nendstream"
+        )
+    objects.append(
+        b"<< /Type /Font /Subtype /Type1 /BaseFont /Courier /Encoding /WinAnsiEncoding >>"
+    )
+    objects.append(
+        b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold "
+        b"/Encoding /WinAnsiEncoding >>"
+    )
 
     page = bytearray(b"%PDF-1.4\n")
     offsets: list[int] = []

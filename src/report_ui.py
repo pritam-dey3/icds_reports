@@ -2,16 +2,19 @@
 
 `calculation` works out the figures and `reports` lays the closing `Total` row under
 them; this module only decides how a sheet is presented: which band heads each group
-of columns, how a closed day shows, and how the sheet holds one corner still while it
-scrolls both ways. The same layout feeds the exporter, so a file and the screen can
-never disagree.
+of columns, how a closed day shows, and how the sheet holds its date column and
+heading still while the figures scroll under them. The same layout feeds the exporter,
+so a file and the screen can never disagree.
+
+The sheet is one `DataTable2`, which keeps the heading and the first column pinned by
+itself, so there are no scroll positions to keep in step by hand.
 """
 
 from datetime import date
-from functools import partial
 from typing import NamedTuple
 
 import flet as ft
+from flet_datatable2 import DataColumn2, DataRow2, DataTable2
 
 import calculation
 import data
@@ -22,18 +25,12 @@ from state import State
 SABJI = reports.SABJI.key
 REGISTER = reports.REGISTER.key
 
-SABJI_CAPTION = reports.SABJI_CAPTION
-
-# Every line has a fixed height, so the frozen date column stays level with the figures
-# beside it and the header strip stays level with them as they move.
-BAND_HEIGHT = 38
-SUB_HEIGHT = 30
-ROW_HEIGHT = 34
-TOTAL_HEIGHT = 46
-DATE_WIDTH = 84
-
-# The pin between the date column and the rest of the sheet.
-_FROZEN_EDGE = ft.Border(right=ft.BorderSide(1, t.BORDER_STRONG))
+# Every line has a fixed height, so the pinned date column stays level with the figures
+# beside it and the heading stays level with them as they move.
+HEAD_HEIGHT = 52
+ROW_HEIGHT = 28
+TOTAL_HEIGHT = 38
+DATE_WIDTH = 68
 
 # The ledger groups reuse each commodity's tile colour as a very light wash.
 _LEDGER_TINTS = {
@@ -112,10 +109,9 @@ SPECS = {SABJI: SABJI_COLUMNS, REGISTER: REGISTER_COLUMNS}
 def sheet(state: State, name: str) -> ft.Control:
     """One sheet, chosen by name: the sabji bill, or the stock register.
 
-    The sheet is taller and wider than a phone, so it owns its own viewport: the
-    bands and headings sit in a strip above the scroll region, and the date column
-    sits to its left, leaving one corner pinned in both directions. Only the figures
-    scroll sideways, so the strip is kept level with them as they move.
+    The sheet is taller and wider than a phone, so it owns its viewport. `DataTable2`
+    pins the heading row and the date column against the scrolling figures, which
+    leaves the corner that names both still in each direction.
     """
     columns, rows, days = _parts(state, name)
     widths = [
@@ -123,42 +119,34 @@ def sheet(state: State, name: str) -> ft.Control:
         for index, column in enumerate(columns)
     ]
 
-    band, subheads = _headings(columns, widths)
-    header = ft.Row(
+    return ft.Container(
         expand=True,
-        scroll=ft.ScrollMode.HIDDEN,
-        controls=[ft.Column(spacing=0, controls=[band, subheads])],
-    )
-    figures = ft.Row(
-        expand=True,
-        scroll=ft.Scrollbar(thickness=6, radius=t.RADIUS_PILL),
-        controls=[_figures(columns, rows, widths, days)],
-    )
-    _keep_level(header, figures)
-
-    return ft.Column(
-        expand=True,
-        spacing=0,
-        controls=[
-            ft.Row(
-                spacing=0,
-                controls=[
-                    _box(
-                        t.label("Date", t.REPORT_HEADER),
-                        DATE_WIDTH,
-                        BAND_HEIGHT + SUB_HEIGHT,
-                        t.TABLE_HEADER,
-                        ft.Alignment.CENTER_LEFT,
-                    ),
-                    header,
+        bgcolor=t.SURFACE,
+        border=t.hairline(),
+        border_radius=t.RADIUS_BAND,
+        clip_behavior=ft.ClipBehavior.ANTI_ALIAS,
+        content=DataTable2(
+            expand=True,
+            columns=[_date_head(), *_heads(columns, widths)],
+            rows=[
+                *[
+                    _day_row(day, closed, line, columns, widths)
+                    for line, (day, closed) in zip(rows[:-1], days, strict=True)
                 ],
-            ),
-            ft.Column(
-                expand=True,
-                scroll=ft.Scrollbar(thickness=6, radius=t.RADIUS_PILL),
-                controls=[ft.Row(spacing=0, controls=[_dates_column(days), figures])],
-            ),
-        ],
+                _total_row(columns, rows[-1], widths),
+            ],
+            fixed_top_rows=1,
+            fixed_left_columns=1,
+            fixed_columns_color=t.SURFACE,
+            fixed_corner_color=t.TABLE_HEADER,
+            heading_row_height=HEAD_HEIGHT,
+            heading_row_color=t.TABLE_HEADER,
+            data_row_height=ROW_HEIGHT,
+            divider_thickness=1,
+            column_spacing=0,
+            horizontal_margin=0,
+            visible_horizontal_scroll_bar=True,
+        ),
     )
 
 
@@ -178,9 +166,9 @@ def hint() -> ft.Control:
         alignment=ft.MainAxisAlignment.CENTER,
         spacing=6,
         controls=[
-            ft.Icon(ft.Icons.SWAP_HORIZ, size=16, color=t.PRIMARY_600),
+            ft.Icon(ft.Icons.SWAP_HORIZ, size=14, color=t.PRIMARY_600),
             t.label("Swipe table to view all columns", t.HINT),
-            ft.Icon(ft.Icons.SWAP_HORIZ, size=16, color=t.PRIMARY_600),
+            ft.Icon(ft.Icons.SWAP_HORIZ, size=14, color=t.PRIMARY_600),
         ],
     )
 
@@ -214,174 +202,135 @@ def _flat_heading(column: Column) -> str:
 def _width(column: Column, values: list[str]) -> int:
     """Enough room for the longest value and the heading that sits over it."""
     longest = max([len(column.label), *(len(value) for value in values)])
-    return max(62, min(230, longest * 8 + 20))
+    return max(54, min(200, longest * 7 + 16))
 
 
 # Drawing the sheet
 
 
-def _dates_column(days: list[tuple[date, bool]]) -> ft.Control:
-    """The frozen column: a day per line, pinned while the figures slide past."""
+def _date_head() -> DataColumn2:
+    """The heading over the pinned date column."""
+    return DataColumn2(
+        fixed_width=DATE_WIDTH,
+        label=ft.Container(
+            width=DATE_WIDTH,
+            height=HEAD_HEIGHT,
+            bgcolor=t.TABLE_HEADER,
+            alignment=ft.Alignment.CENTER_LEFT,
+            padding=ft.Padding.symmetric(horizontal=6),
+            content=t.label("Date", t.REPORT_HEADER),
+        ),
+    )
+
+
+def _heads(columns: list[Column], widths: list[int]) -> list[DataColumn2]:
+    """A heading per column, naming its group only on the run's first column.
+
+    A table has no merged cells, so the group is written once at the start of its run
+    and the tint carries the band across the rest; the second line names the column.
+    """
+    return [
+        DataColumn2(
+            fixed_width=widths[index],
+            label=_head_cell(
+                widths[index],
+                column.tint,
+                column.group if _opens(columns, index) else "",
+                column.label,
+                _group_ink(column),
+            ),
+        )
+        for index, column in enumerate(columns)
+    ]
+
+
+def _opens(columns: list[Column], index: int) -> bool:
+    """Whether this column is the first of its group's run."""
+    return index == 0 or columns[index - 1].group != columns[index].group
+
+
+def _head_cell(
+    width: int, bgcolor: str, group: str, label: str, ink: str
+) -> ft.Container:
+    """Two stacked lines on the column's tint: the group over the column's own name."""
     return ft.Container(
-        width=DATE_WIDTH,
-        border=_FROZEN_EDGE,
+        width=width,
+        height=HEAD_HEIGHT,
+        bgcolor=bgcolor,
+        alignment=ft.Alignment.CENTER,
+        padding=ft.Padding.symmetric(horizontal=4),
         content=ft.Column(
             spacing=0,
+            alignment=ft.MainAxisAlignment.CENTER,
+            horizontal_alignment=ft.CrossAxisAlignment.CENTER,
             controls=[
-                *[
-                    _box(
-                        t.label(
-                            _date_label(day),
-                            t.REPORT_CELL,
-                            t.CLOSED_INK if closed else None,
-                            nowrap=True,
-                        ),
-                        DATE_WIDTH,
-                        ROW_HEIGHT,
-                        t.CLOSED_ROW if closed else t.SURFACE,
-                        ft.Alignment.CENTER_LEFT,
-                    )
-                    for day, closed in days
-                ],
-                _box(
-                    t.label("Total", t.TOTAL_LABEL),
-                    DATE_WIDTH,
-                    TOTAL_HEIGHT,
-                    t.SURFACE_MUTED,
-                    ft.Alignment.CENTER_LEFT,
-                ),
+                t.label(group, t.GROUP_HEADER, ink, nowrap=True),
+                t.label(label, t.REPORT_HEADER, nowrap=True),
             ],
         ),
     )
 
 
-def _figures(
-    columns: list[Column],
-    rows: list[list[str]],
-    widths: list[int],
-    days: list[tuple[date, bool]],
-) -> ft.Control:
-    """A line per day, then the closing row."""
-    return ft.Column(
-        spacing=0,
-        controls=[
+def _day_row(
+    day: date, closed: bool, values: list[str], columns: list[Column], widths: list[int]
+) -> DataRow2:
+    """One day: its date, then a figure per column."""
+    return DataRow2(
+        specific_row_height=ROW_HEIGHT,
+        cells=[
+            _cell(
+                t.label(
+                    _date_label(day),
+                    t.REPORT_CELL,
+                    t.CLOSED_INK if closed else None,
+                    nowrap=True,
+                ),
+                DATE_WIDTH,
+                t.CLOSED_ROW if closed else t.SURFACE,
+                ft.Alignment.CENTER_LEFT,
+            ),
             *[
-                ft.Row(
-                    spacing=0,
-                    controls=[
-                        _box(
-                            t.label(
-                                value,
-                                t.REPORT_CELL,
-                                t.TEXT_TERTIARY if column.muted else None,
-                                nowrap=True,
-                            ),
-                            widths[index],
-                            ROW_HEIGHT,
-                            t.CLOSED_ROW if closed else t.SURFACE,
-                            ft.Alignment.CENTER_RIGHT,
-                        )
-                        for index, (column, value) in enumerate(
-                            zip(columns, line, strict=True)
-                        )
-                    ],
+                _cell(
+                    t.label(
+                        value,
+                        t.REPORT_CELL,
+                        t.TEXT_TERTIARY if column.muted else None,
+                        nowrap=True,
+                    ),
+                    widths[index],
+                    t.CLOSED_ROW if closed else t.SURFACE,
+                    ft.Alignment.CENTER_RIGHT,
                 )
-                for line, (_, closed) in zip(rows[:-1], days, strict=True)
+                for index, (column, value) in enumerate(
+                    zip(columns, values, strict=True)
+                )
             ],
-            _total_row(columns, rows[-1], widths),
         ],
     )
 
 
-def _keep_level(header: ft.Row, figures: ft.Row) -> None:
-    """Hold the header strip over the columns the figures have scrolled to.
-
-    The two live in separate scroll views — one cannot sit still while the other
-    slides — so either one moving drags the other with it. A shared flag stops the
-    echo of a followed move from following straight back again.
-    """
-    moving = {"now": False}
-
-    async def follow(source: ft.Row, target: ft.Row, event: ft.OnScrollEvent) -> None:
-        if moving["now"]:
-            return
-        moving["now"] = True
-        try:
-            await target.scroll_to(offset=event.pixels)
-        finally:
-            moving["now"] = False
-
-    header.on_scroll = partial(follow, header, figures)
-    figures.on_scroll = partial(follow, figures, header)
-
-
-def _headings(
-    columns: list[Column], widths: list[int]
-) -> tuple[ft.Control, ft.Control]:
-    """The group band and the sub-heading line, with groups spanning their columns."""
-    band: list[ft.Control] = []
-    subheads: list[ft.Control] = []
-    index = 0
-    while index < len(columns):
-        column = columns[index]
-        run = 1
-        while index + run < len(columns) and columns[index + run].group == column.group:
-            run += 1
-        if column.group:
-            band.append(
-                _box(
-                    t.label(
-                        column.group, t.GROUP_HEADER, _group_ink(column), nowrap=True
-                    ),
-                    sum(widths[index : index + run]),
-                    BAND_HEIGHT,
-                    column.tint,
-                    ft.Alignment.CENTER,
-                )
-            )
-            for offset in range(run):
-                below = columns[index + offset]
-                subheads.append(
-                    _box(
-                        t.label(below.label, t.REPORT_HEADER, nowrap=True),
-                        widths[index + offset],
-                        SUB_HEIGHT,
-                        below.tint,
-                        ft.Alignment.CENTER,
-                    )
-                )
-        else:
-            band.append(
-                _box(
-                    t.label(column.label, t.REPORT_HEADER, nowrap=True),
-                    widths[index],
-                    BAND_HEIGHT,
-                    column.tint,
-                    ft.Alignment.CENTER,
-                )
-            )
-            subheads.append(
-                _box(None, widths[index], SUB_HEIGHT, column.tint, ft.Alignment.CENTER)
-            )
-        index += run
-    return ft.Row(spacing=0, controls=band), ft.Row(spacing=0, controls=subheads)
-
-
-def _total_row(
-    columns: list[Column], values: list[str], widths: list[int]
-) -> ft.Control:
+def _total_row(columns: list[Column], values: list[str], widths: list[int]) -> DataRow2:
     """The closing line: bold, tinted, and a balance annotated as the closing one."""
-    return ft.Row(
-        spacing=0,
-        controls=[
-            _box(
-                _total_cell(column, value),
-                widths[index],
-                TOTAL_HEIGHT,
-                column.tint,
-                ft.Alignment.CENTER,
-            )
-            for index, (column, value) in enumerate(zip(columns, values, strict=True))
+    return DataRow2(
+        specific_row_height=TOTAL_HEIGHT,
+        cells=[
+            _cell(
+                t.label("Total", t.TOTAL_LABEL),
+                DATE_WIDTH,
+                t.SURFACE_MUTED,
+                ft.Alignment.CENTER_LEFT,
+            ),
+            *[
+                _cell(
+                    _total_cell(column, value),
+                    widths[index],
+                    column.tint,
+                    ft.Alignment.CENTER,
+                )
+                for index, (column, value) in enumerate(
+                    zip(columns, values, strict=True)
+                )
+            ],
         ],
     )
 
@@ -408,19 +357,16 @@ def _group_ink(column: Column) -> str:
     )
 
 
-def _box(
-    content: ft.Control | None,
-    width: int,
-    height: int,
-    bgcolor: str,
-    align: ft.Alignment,
-) -> ft.Container:
-    """A cell of a fixed size, so two stacked columns stay in step."""
-    return ft.Container(
-        width=width,
-        height=height,
-        bgcolor=bgcolor,
-        alignment=align,
-        padding=ft.Padding.symmetric(horizontal=8),
-        content=content,
+def _cell(
+    content: ft.Control, width: int, bgcolor: str, align: ft.Alignment
+) -> ft.DataCell:
+    """A figure of a fixed width, so a row's cells stay in step with its headings."""
+    return ft.DataCell(
+        ft.Container(
+            width=width,
+            bgcolor=bgcolor,
+            alignment=align,
+            padding=ft.Padding.symmetric(horizontal=6),
+            content=content,
+        )
     )

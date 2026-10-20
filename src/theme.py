@@ -73,41 +73,40 @@ RADIUS_PILL = 999
 # How wide the content column is allowed to grow before it is centred.
 CONTENT_WIDTH = 720
 
-# Type roles
+# Type roles. Sizes stay in logical pixels, so the platform still applies screen
+# density and the reader's own font scale on top of them.
 PAGE_TITLE = ft.TextStyle(
-    size=30, weight=ft.FontWeight.W_800, color=TEXT, letter_spacing=-0.4
+    size=24, weight=ft.FontWeight.W_800, color=TEXT, letter_spacing=-0.4
 )
-PAGE_SUBTITLE = ft.TextStyle(size=15, color=TEXT_SECONDARY)
 CARD_TITLE = ft.TextStyle(
-    size=21, weight=ft.FontWeight.W_700, color=TEXT, letter_spacing=-0.2
+    size=17, weight=ft.FontWeight.W_700, color=TEXT, letter_spacing=-0.2
 )
-CARD_SUBTITLE = ft.TextStyle(size=14, color=TEXT_SECONDARY)
-SECTION_TITLE = ft.TextStyle(size=16, weight=ft.FontWeight.W_700, color=TEXT)
-GROUP_HEADER = ft.TextStyle(size=14, weight=ft.FontWeight.W_700, color=TEXT)
-COLUMN_HEADER = ft.TextStyle(size=13, weight=ft.FontWeight.W_600, color=TEXT_SECONDARY)
-CELL = ft.TextStyle(size=16, weight=ft.FontWeight.W_500, color=TEXT)
-TOTAL_LABEL = ft.TextStyle(size=15, weight=ft.FontWeight.W_700, color=TEXT)
-TOTAL_VALUE = ft.TextStyle(size=16, weight=ft.FontWeight.W_700, color=TEXT)
-FIELD = ft.TextStyle(size=16, weight=ft.FontWeight.W_500, color=TEXT)
-CHIP_DATE = ft.TextStyle(size=22, weight=ft.FontWeight.W_700, color=PRIMARY_600)
+SECTION_TITLE = ft.TextStyle(size=14, weight=ft.FontWeight.W_700, color=TEXT)
+GROUP_HEADER = ft.TextStyle(size=12, weight=ft.FontWeight.W_700, color=TEXT)
+COLUMN_HEADER = ft.TextStyle(size=11, weight=ft.FontWeight.W_600, color=TEXT_SECONDARY)
+CELL = ft.TextStyle(size=14, weight=ft.FontWeight.W_500, color=TEXT)
+TOTAL_LABEL = ft.TextStyle(size=12, weight=ft.FontWeight.W_700, color=TEXT)
+TOTAL_VALUE = ft.TextStyle(size=14, weight=ft.FontWeight.W_700, color=TEXT)
+FIELD = ft.TextStyle(size=14, weight=ft.FontWeight.W_500, color=TEXT)
+CHIP_DATE = ft.TextStyle(size=18, weight=ft.FontWeight.W_700, color=PRIMARY_600)
 CHIP_MONTH = ft.TextStyle(
-    size=12, weight=ft.FontWeight.W_500, color=TEXT_SECONDARY, letter_spacing=0.4
+    size=10, weight=ft.FontWeight.W_500, color=TEXT_SECONDARY, letter_spacing=0.4
 )
-CHIP_WEEKDAY = ft.TextStyle(size=15, weight=ft.FontWeight.W_500, color=TEXT_SECONDARY)
-BUTTON = ft.TextStyle(size=17, weight=ft.FontWeight.W_600)
-STEP_LABEL = ft.TextStyle(size=12, weight=ft.FontWeight.W_500, color=TEXT_SECONDARY)
-STEP_LABEL_ACTIVE = ft.TextStyle(size=12, weight=ft.FontWeight.W_700, color=TEXT)
-STEP_NUMBER = ft.TextStyle(size=14, weight=ft.FontWeight.W_700, color=TEXT_INVERSE)
+CHIP_WEEKDAY = ft.TextStyle(size=11, weight=ft.FontWeight.W_500, color=TEXT_SECONDARY)
+BUTTON = ft.TextStyle(size=14, weight=ft.FontWeight.W_600)
+STEP_LABEL = ft.TextStyle(size=11, weight=ft.FontWeight.W_500, color=TEXT_SECONDARY)
+STEP_LABEL_ACTIVE = ft.TextStyle(size=11, weight=ft.FontWeight.W_700, color=TEXT)
+STEP_NUMBER = ft.TextStyle(size=11, weight=ft.FontWeight.W_700, color=TEXT_INVERSE)
 STEP_NUMBER_AHEAD = ft.TextStyle(
-    size=14, weight=ft.FontWeight.W_700, color=TEXT_SECONDARY
+    size=11, weight=ft.FontWeight.W_700, color=TEXT_SECONDARY
 )
-HINT = ft.TextStyle(size=13, color=TEXT_SECONDARY)
-EMPTY_TITLE = ft.TextStyle(size=16, weight=ft.FontWeight.W_700, color=TEXT)
-EMPTY_BODY = ft.TextStyle(size=14, color=TEXT_SECONDARY)
-DIALOG_TITLE = ft.TextStyle(size=20, weight=ft.FontWeight.W_700, color=TEXT)
-DIALOG_BODY = ft.TextStyle(size=15, color=TEXT_SECONDARY)
-REPORT_CELL = ft.TextStyle(size=14, color=TEXT)
-REPORT_HEADER = ft.TextStyle(size=12, weight=ft.FontWeight.W_600, color=TEXT_SECONDARY)
+HINT = ft.TextStyle(size=11, color=TEXT_SECONDARY)
+EMPTY_TITLE = ft.TextStyle(size=14, weight=ft.FontWeight.W_700, color=TEXT)
+EMPTY_BODY = ft.TextStyle(size=12, color=TEXT_SECONDARY)
+DIALOG_TITLE = ft.TextStyle(size=17, weight=ft.FontWeight.W_700, color=TEXT)
+DIALOG_BODY = ft.TextStyle(size=13, color=TEXT_SECONDARY)
+REPORT_CELL = ft.TextStyle(size=12, color=TEXT)
+REPORT_HEADER = ft.TextStyle(size=10, weight=ft.FontWeight.W_600, color=TEXT_SECONDARY)
 
 
 def label(

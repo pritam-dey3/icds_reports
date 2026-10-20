@@ -31,7 +31,7 @@ REPORT_STEP = len(STEPS) - 1
 
 # A table's name column against one of its number fields. The name gets the larger
 # share, so a commodity can wrap to two lines while its figures stay on one.
-LABEL_FLEX = 5
+LABEL_FLEX = 7
 FIELD_FLEX = 3
 
 # How much of the rail's width a day's count takes, against its date.
@@ -83,7 +83,10 @@ class Workspace:
 
     def touch(self) -> None:
         """An edit in place: save it, leave the screen as it is."""
+        before = self.saved
         self.saved = self._on_edit()
+        if self.saved is False and before is not False:
+            _save_failed(self)
 
     def rebuild(self) -> None:
         """A change of shape: save it and draw the screen again."""
@@ -117,12 +120,12 @@ def _content(workspace: Workspace) -> ft.Control:
     padded = ft.Container(
         width=t.CONTENT_WIDTH,
         padding=ft.Padding.only(
-            left=t.SPACE_4, right=t.SPACE_4, top=t.SPACE_3, bottom=t.SPACE_6
+            left=t.SPACE_3, right=t.SPACE_3, top=t.SPACE_2, bottom=t.SPACE_4
         ),
         expand=workspace.step == REPORT_STEP,
         content=ft.Column(
             expand=workspace.step == REPORT_STEP,
-            spacing=t.SPACE_4,
+            spacing=t.SPACE_3,
             horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
             controls=_page(workspace),
         ),
@@ -146,19 +149,12 @@ def _page(workspace: Workspace) -> list[ft.Control]:
 
 
 def header(workspace: Workspace) -> ft.Control:
-    """The title block, the month beside it, and the menu."""
+    """The title, the month beside it, and the menu."""
     return ft.Row(
-        spacing=t.SPACE_3,
+        spacing=t.SPACE_2,
         vertical_alignment=ft.CrossAxisAlignment.CENTER,
         controls=[
-            ft.Column(
-                expand=True,
-                spacing=t.SPACE_1,
-                controls=[
-                    t.label("ICDS Reports", t.PAGE_TITLE),
-                    t.label("Nutrition and service delivery reports", t.PAGE_SUBTITLE),
-                ],
-            ),
+            ft.Text("ICDS Reports", style=t.PAGE_TITLE, expand=True),
             _month_row(workspace),
             menu(workspace),
         ],
@@ -169,6 +165,8 @@ def menu(workspace: Workspace) -> ft.PopupMenuButton:
     """The app's only menu, behind the overflow button."""
     return ft.PopupMenuButton(
         icon=ft.Icons.MORE_VERT,
+        icon_size=20,
+        padding=4,
         tooltip="Menu",
         items=[
             ft.PopupMenuItem(
@@ -185,8 +183,8 @@ def _month_row(workspace: Workspace) -> ft.Container:
     """The month the whole worksheet is about, opening the list of months."""
     return ft.Container(
         key="month-picker",
-        height=40,
-        padding=ft.Padding.symmetric(horizontal=t.SPACE_3),
+        height=34,
+        padding=ft.Padding.symmetric(horizontal=10),
         bgcolor=t.SURFACE,
         border=t.field_border(),
         border_radius=t.RADIUS_PILL,
@@ -194,12 +192,12 @@ def _month_row(workspace: Workspace) -> ft.Container:
         tooltip="Change month",
         on_click=partial(_pick_month, workspace),
         content=ft.Row(
-            spacing=t.SPACE_2,
+            spacing=6,
             tight=True,
             controls=[
-                ft.Icon(ft.Icons.CALENDAR_MONTH, size=18, color=t.TEXT_SECONDARY),
+                ft.Icon(ft.Icons.CALENDAR_MONTH, size=16, color=t.TEXT_SECONDARY),
                 t.label(data.month_label(workspace.state.month), t.CELL),
-                ft.Icon(ft.Icons.KEYBOARD_ARROW_DOWN, size=18, color=t.TEXT_SECONDARY),
+                ft.Icon(ft.Icons.KEYBOARD_ARROW_DOWN, size=16, color=t.TEXT_SECONDARY),
             ],
         ),
     )
@@ -227,7 +225,7 @@ def _step_column(workspace: Workspace, index: int) -> ft.Column:
     state = step_state(workspace, index)
     return ft.Column(
         expand=True,
-        spacing=t.SPACE_2,
+        spacing=t.SPACE_1,
         horizontal_alignment=ft.CrossAxisAlignment.CENTER,
         controls=[
             ft.Row(
@@ -253,25 +251,29 @@ def _rail(workspace: Workspace, index: int, *, before: bool) -> ft.Container:
     """The rail between two nodes: lit up to the open step, quiet after it."""
     edge = index if before else index + 1
     if not 0 < edge < len(STEPS):
-        return ft.Container(expand=True, height=2.5)
+        return ft.Container(expand=True, height=2)
     lit = workspace.step >= edge
     return ft.Container(
-        expand=True, height=2.5, bgcolor=t.PRIMARY_500 if lit else t.BORDER_STRONG
+        expand=True, height=2, bgcolor=t.PRIMARY_500 if lit else t.BORDER_STRONG
     )
 
 
 def _node(workspace: Workspace, index: int, state: str) -> ft.Container:
-    """One node: a tick once passed, the step's number while it is open or ahead."""
+    """One node: a tick once passed, the step's number while it is open or ahead.
+
+    The ring around the open node is drawn for every step, filled only for the open
+    one, so all four labels keep the same baseline.
+    """
     filled = state != "upcoming"
     circle = ft.Container(
-        width=34,
-        height=34,
+        width=30,
+        height=30,
         border_radius=t.RADIUS_PILL,
         bgcolor=t.PRIMARY_600 if filled else t.SURFACE,
         border=None if filled else ft.Border.all(1.5, t.BORDER_STRONG),
         alignment=ft.Alignment.CENTER,
         content=(
-            ft.Icon(ft.Icons.CHECK, size=18, color=t.TEXT_INVERSE)
+            ft.Icon(ft.Icons.CHECK, size=16, color=t.TEXT_INVERSE)
             if state == "passed"
             else t.label(
                 str(index + 1), t.STEP_NUMBER if filled else t.STEP_NUMBER_AHEAD
@@ -280,19 +282,15 @@ def _node(workspace: Workspace, index: int, state: str) -> ft.Container:
     )
     return ft.Container(
         key=f"step-{index + 1}",
-        padding=7,
+        padding=4,
         border_radius=t.RADIUS_PILL,
         tooltip=f"Open {STEPS[index]}",
         on_click=partial(_open_step, workspace, index),
-        content=(
-            ft.Container(
-                padding=t.SPACE_2,
-                border_radius=t.RADIUS_PILL,
-                bgcolor=t.PRIMARY_100,
-                content=circle,
-            )
-            if state == "current"
-            else circle
+        content=ft.Container(
+            padding=5,
+            border_radius=t.RADIUS_PILL,
+            bgcolor=t.PRIMARY_100 if state == "current" else None,
+            content=circle,
         ),
     )
 
@@ -303,17 +301,11 @@ def footer(workspace: Workspace) -> ft.Container:
         bgcolor=t.SURFACE,
         border=ft.Border(top=ft.BorderSide(1, t.BORDER_SUBTLE)),
         shadow=t.sheet_shadow(),
-        padding=ft.Padding.symmetric(horizontal=t.SPACE_4, vertical=t.SPACE_3),
+        padding=ft.Padding.symmetric(horizontal=t.SPACE_3, vertical=t.SPACE_2),
         content=ft.Column(
             horizontal_alignment=ft.CrossAxisAlignment.CENTER,
             controls=[
-                ft.Container(
-                    width=t.CONTENT_WIDTH,
-                    content=ft.Column(
-                        spacing=t.SPACE_2,
-                        controls=[_navigation(workspace), _status(workspace)],
-                    ),
-                )
+                ft.Container(width=t.CONTENT_WIDTH, content=_navigation(workspace))
             ],
         ),
     )
@@ -368,21 +360,31 @@ def _navigation(workspace: Workspace) -> ft.Row:
     )
 
 
-def _status(workspace: Workspace) -> ft.Control:
-    """The quiet save report: nothing, `Saved`, or a failure with a retry."""
-    if workspace.saved is False:
-        return ft.Row(
-            spacing=t.SPACE_2,
-            controls=[
-                t.label("Couldn't save these changes", t.HINT, t.DANGER),
-                ft.TextButton(
-                    content="Retry", key="retry", on_click=partial(_retry, workspace)
-                ),
-            ],
+def _save_failed(workspace: Workspace) -> None:
+    """A small word when a write does not land; a successful save stays silent."""
+    ft.context.page.show_dialog(
+        ft.SnackBar(
+            content=t.label("Couldn't save this change", t.HINT, t.TEXT_INVERSE),
+            behavior=ft.SnackBarBehavior.FLOATING,
+            bgcolor=t.TEXT,
+            show_close_icon=True,
+            close_icon_color=t.TEXT_INVERSE,
+            margin=ft.Margin.only(left=t.SPACE_4, right=t.SPACE_4, bottom=t.SPACE_2),
+            duration=ft.Duration(seconds=5),
+            action=ft.SnackBarAction(
+                label="Retry",
+                text_color=t.PRIMARY_100,
+                on_click=partial(_retry, workspace),
+            ),
+            on_dismiss=partial(_toast_dismissed, workspace),
         )
-    if workspace.saved is True:
-        return t.label("Saved", t.HINT, t.SUCCESS)
-    return ft.Container(height=0)
+    )
+
+
+def _toast_dismissed(workspace: Workspace, event: Any = None) -> None:
+    """Let a later failed write speak again once this toast is gone."""
+    if workspace.saved is False:
+        workspace.saved = None
 
 
 def _body(workspace: Workspace) -> ft.Control:
@@ -397,21 +399,19 @@ def _body(workspace: Workspace) -> ft.Control:
 def _costings(workspace: Workspace) -> ft.Control:
     """The two per-head tables: what a head costs, and what a head is given."""
     return ft.Column(
-        spacing=t.SPACE_4,
+        spacing=t.SPACE_3,
         horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
         controls=[
             c.section(
                 ft.Icons.PAID,
                 t.BLUE,
                 "Costings",
-                "Cost per head per day, in paisa. A rate of 0 means not served.",
                 _rate_table(workspace, "costs", data.COST_ITEMS, "cost", total=True),
             ),
             c.section(
                 ft.Icons.INVENTORY_2,
                 t.MINT,
                 "Per-head inventory",
-                "Quantity per head per serving day, in the item's own unit.",
                 _rate_table(
                     workspace, "inventory", data.STOCK_ITEMS, "inventory", total=False
                 ),
@@ -482,14 +482,14 @@ def _rate_row(workspace: Workspace, table: str, item: str, prefix: str) -> ft.Co
     return c.row([
         c.cell(
             ft.Row(
-                spacing=t.SPACE_2,
+                spacing=t.SPACE_1,
                 controls=[
                     c.icon_tile(icon, colors),
                     ft.Text(_item_label(item), style=t.CELL, expand=True),
                 ],
             ),
             flex=LABEL_FLEX,
-            align=ft.Alignment.CENTER_LEFT,
+            align=None,
         ),
         *[
             c.cell(
@@ -501,7 +501,7 @@ def _rate_row(workspace: Workspace, table: str, item: str, prefix: str) -> ft.Co
                     ),
                 ),
                 flex=FIELD_FLEX,
-                padding=(4, 8),
+                padding=(3, 4),
             )
             for head, day_type in data.RATE_COLUMNS
         ],
@@ -515,14 +515,14 @@ def _total_row(costs: pd.DataFrame) -> ft.Control:
         [
             c.cell(
                 ft.Row(
-                    spacing=6,
+                    spacing=4,
                     controls=[
-                        ft.Icon(ft.Icons.FUNCTIONS, size=16, color=t.TEXT_SECONDARY),
+                        ft.Icon(ft.Icons.FUNCTIONS, size=14, color=t.TEXT_SECONDARY),
                         t.label("Total per head", t.TOTAL_LABEL),
                     ],
                 ),
                 flex=LABEL_FLEX,
-                align=ft.Alignment.CENTER_LEFT,
+                align=None,
                 bgcolor=t.SURFACE_MUTED,
             ),
             *[
@@ -562,22 +562,14 @@ def _rate(state: State, table: str, item: str, head: str, day_type: str) -> int:
 def _attendance(workspace: Workspace) -> ft.Control:
     """Holidays first, because they are what closes a day, then the daily counts."""
     return ft.Column(
-        spacing=t.SPACE_4,
+        spacing=t.SPACE_3,
         horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
         controls=[
             c.section(
-                ft.Icons.CALENDAR_MONTH,
-                t.MINT,
-                "Holidays",
-                "Closed days are excluded from attendance and consumption.",
-                _holidays(workspace),
+                ft.Icons.CALENDAR_MONTH, t.MINT, "Holidays", _holidays(workspace)
             ),
             c.section(
-                ft.Icons.GROUPS,
-                t.BLUE,
-                "Daily attendance",
-                "People present each day. Sundays start closed.",
-                _attendance_grid(workspace),
+                ft.Icons.GROUPS, t.BLUE, "Daily attendance", _attendance_grid(workspace)
             ),
         ],
     )
@@ -601,7 +593,7 @@ def _holidays(workspace: Workspace) -> ft.Control:
         )
     )
     return ft.Column(
-        spacing=t.SPACE_4,
+        spacing=t.SPACE_3,
         horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
         controls=[
             t.label(data.month_label(workspace.state.month), t.SECTION_TITLE),
@@ -620,14 +612,12 @@ def _holidays(workspace: Workspace) -> ft.Control:
 def _chip(workspace: Workspace, day: date) -> ft.Container:
     """One closed day: the weekday, then the date, and the button that reopens it."""
     return ft.Container(
-        padding=ft.Padding.only(
-            left=t.SPACE_3, right=t.SPACE_2, top=t.SPACE_2, bottom=t.SPACE_3
-        ),
+        padding=ft.Padding.only(left=10, right=6, top=6, bottom=8),
         bgcolor=t.MOTHER_BG,
         border=t.hairline(),
         border_radius=t.RADIUS_FIELD,
         content=ft.Row(
-            spacing=t.SPACE_2,
+            spacing=6,
             tight=True,
             vertical_alignment=ft.CrossAxisAlignment.START,
             controls=[
@@ -641,14 +631,14 @@ def _chip(workspace: Workspace, day: date) -> ft.Container:
                 ),
                 ft.Container(
                     key=f"holiday-delete-{day.isoformat()}",
-                    width=28,
-                    height=28,
+                    width=24,
+                    height=24,
                     border=t.hairline(),
                     border_radius=t.RADIUS_PILL,
                     alignment=ft.Alignment.CENTER,
                     tooltip="Reopen this day",
                     on_click=partial(_delete_holiday, workspace, day),
-                    content=ft.Icon(ft.Icons.CLOSE, size=16, color=t.TEXT_SECONDARY),
+                    content=ft.Icon(ft.Icons.CLOSE, size=14, color=t.TEXT_SECONDARY),
                 ),
             ],
         ),
@@ -707,7 +697,7 @@ def _attendance_row(
                     disabled=closed,
                 ),
                 flex=FIELD_FLEX,
-                padding=(4, 8),
+                padding=(3, 4),
             ),
             c.cell(
                 c.number_field(
@@ -717,7 +707,7 @@ def _attendance_row(
                     disabled=closed,
                 ),
                 flex=FIELD_FLEX,
-                padding=(4, 8),
+                padding=(3, 4),
             ),
         ],
         bgcolor=t.CLOSED_ROW if closed else None,
@@ -731,21 +721,19 @@ def _attendance_row(
 def _inventory(workspace: Workspace) -> ft.Control:
     """Where each commodity starts, and what arrives during the month."""
     return ft.Column(
-        spacing=t.SPACE_4,
+        spacing=t.SPACE_3,
         horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
         controls=[
             c.section(
                 ft.Icons.INVENTORY_2,
                 t.MINT,
                 "Opening stock",
-                "The stock each commodity's ledger starts from.",
                 _opening_stock_table(workspace),
             ),
             c.section(
                 ft.Icons.LOCAL_SHIPPING,
                 t.BLUE,
                 "Added inventory",
-                "A delivery counts from its own day on, and is clamped into the month.",
                 _deliveries(workspace),
             ),
         ],
@@ -777,14 +765,14 @@ def _opening_stock_table(workspace: Workspace) -> ft.Control:
                 [
                     c.cell(
                         ft.Row(
-                            spacing=t.SPACE_2,
+                            spacing=t.SPACE_1,
                             controls=[
                                 c.icon_tile(icon, colors),
                                 ft.Text(_item_label(item), style=t.CELL, expand=True),
                             ],
                         ),
                         flex=LABEL_FLEX,
-                        align=ft.Alignment.CENTER_LEFT,
+                        align=None,
                     ),
                     c.cell(
                         c.number_field(
@@ -793,7 +781,7 @@ def _opening_stock_table(workspace: Workspace) -> ft.Control:
                             on_change=partial(_set_opening, workspace, item),
                         ),
                         flex=FIELD_FLEX,
-                        padding=(4, 8),
+                        padding=(3, 4),
                     ),
                 ],
                 rule=item != data.STOCK_ITEMS[-1],
@@ -826,7 +814,7 @@ def _deliveries(workspace: Workspace) -> ft.Column:
         )
     )
     return ft.Column(
-        spacing=10, horizontal_alignment=ft.CrossAxisAlignment.STRETCH, controls=rows
+        spacing=8, horizontal_alignment=ft.CrossAxisAlignment.STRETCH, controls=rows
     )
 
 
@@ -839,9 +827,9 @@ def _delivery(workspace: Workspace, index: int, row: dict[str, Any]) -> ft.Contr
         bgcolor=t.SURFACE_MUTED,
         border=t.hairline(),
         border_radius=t.RADIUS_FIELD,
-        padding=t.SPACE_3,
+        padding=10,
         content=ft.Column(
-            spacing=t.SPACE_2,
+            spacing=6,
             controls=[
                 ft.Row(
                     spacing=t.SPACE_2,
@@ -852,7 +840,7 @@ def _delivery(workspace: Workspace, index: int, row: dict[str, Any]) -> ft.Contr
                             value=item,
                             expand=True,
                             dense=True,
-                            text_size=15,
+                            text_size=13,
                             border=ft.NoInputBorder(),
                             content_padding=ft.Padding.symmetric(horizontal=4),
                             options=[
@@ -905,7 +893,6 @@ def _report(workspace: Workspace) -> ft.Control:
         ft.Icons.DESCRIPTION,
         t.BLUE,
         f"Report — {data.month_label(workspace.state.month)}",
-        report_ui.SABJI_CAPTION,
         ft.Column(
             expand=True,
             spacing=t.SPACE_3,
@@ -948,7 +935,8 @@ def _sheet_switch(workspace: Workspace) -> ft.SegmentedButton:
             },
             side=ft.BorderSide(1.5, t.BORDER_STRONG),
             shape=ft.RoundedRectangleBorder(radius=t.RADIUS_BAND),
-            text_style=ft.TextStyle(size=15, weight=ft.FontWeight.W_600),
+            padding=ft.Padding.symmetric(horizontal=10, vertical=4),
+            text_style=ft.TextStyle(size=13, weight=ft.FontWeight.W_600),
         ),
         on_change=partial(_switch_sheet, workspace),
     )
@@ -1013,13 +1001,13 @@ def _pick_month(workspace: Workspace, event: Any = None) -> None:
             title=t.label("Month", t.DIALOG_TITLE),
             content=ft.Column(
                 spacing=2,
-                height=380,
+                height=340,
                 scroll=ft.ScrollMode.AUTO,
                 controls=[
                     ft.Container(
                         key=f"month-{key}",
-                        height=48,
-                        padding=ft.Padding.symmetric(horizontal=t.SPACE_3),
+                        height=40,
+                        padding=ft.Padding.symmetric(horizontal=8),
                         bgcolor=t.PRIMARY_100 if key == current else None,
                         border_radius=t.RADIUS_FIELD,
                         on_click=partial(_open_month, workspace, key),
@@ -1031,7 +1019,7 @@ def _pick_month(workspace: Workspace, event: Any = None) -> None:
                                 *(
                                     [
                                         ft.Icon(
-                                            ft.Icons.CHECK, size=18, color=t.PRIMARY_600
+                                            ft.Icons.CHECK, size=16, color=t.PRIMARY_600
                                         )
                                     ]
                                     if key == current

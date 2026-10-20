@@ -381,6 +381,18 @@ wheels = [
 ]
 
 [[package]]
+name = "flet-datatable2"
+version = "1.0.4"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "flet" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/4d/df/3ad1011e703e4a02f070933f224b609f23b9817ad54259eb2184097a1f89/flet_datatable2-1.0.4.tar.gz", hash = "sha256:a2e1cb7a38bfa1b8ecd4caee2d579faf034f6110ca8cc6dbf268e8de35bf7bdc", size = 15321, upload-time = "2026-10-08T22:25:35.401Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/9f/c6/0d7ec08b4e6d26d9152bac4aa7e0d3778b5f86f0aef5e879fb4a2064b17c/flet_datatable2-1.0.4-py3-none-any.whl", hash = "sha256:af9cea611e24eb2a1a853e453e0859b19846d531819de375221d15c3a8cc6fb4", size = 17663, upload-time = "2026-10-08T22:25:34.575Z" },
+]
+
+[[package]]
 name = "flet-desktop"
 version = "1.0.4"
 source = { registry = "https://pypi.org/simple" }
@@ -579,6 +591,7 @@ source = { virtual = "." }
 dependencies = [
     { name = "fastapi" },
     { name = "flet" },
+    { name = "flet-datatable2" },
     { name = "flet-web" },
     { name = "pandas", version = "2.3.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "pandas", version = "3.0.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
@@ -596,6 +609,7 @@ dev = [
 requires-dist = [
     { name = "fastapi", specifier = "==0.140" },
     { name = "flet", specifier = ">=1.0.4" },
+    { name = "flet-datatable2", specifier = "==1.0.4" },
     { name = "flet-web", specifier = ">=1.0.4" },
     { name = "pandas", specifier = ">=2.3.3" },
 ]
