@@ -12,6 +12,7 @@ import pytest
 
 import data
 import report_ui
+import theme
 import ui
 from state import State
 
@@ -72,6 +73,31 @@ def fields(control: ft.Control) -> list[ft.TextField]:
     return found
 
 
+def keyed(control: ft.Control, key: str) -> Any:
+    """The control carrying a key, wherever it sits under this one."""
+
+    def walk(node: Any) -> Any:
+        if getattr(node, "key", None) == key:
+            return node
+        for child in getattr(node, "controls", None) or []:
+            found = walk(child)
+            if found is not None:
+                return found
+        content = getattr(node, "content", None)
+        if isinstance(content, ft.Control):
+            return walk(content)
+        return None
+
+    found = walk(control)
+    assert found is not None, f"no control carries the key {key}"
+    return found
+
+
+def kids(control: Any) -> list[Any]:
+    """The children of a row or column, in the order they were laid out."""
+    return control.controls
+
+
 class Click:
     """What a widget hands its handler.
 
@@ -95,28 +121,22 @@ def click(control: Any = None, data: Any = None) -> Any:
 def test_the_screen_shows_the_month_and_the_four_steps(workspace):
     shown = texts(ui.build(workspace)[0])
 
-    assert "October 2026" != ""  # the picker carries it as a value, checked below
-    assert any("1 Costings" == line for line in shown)
-    assert any("4 Report" == line for line in shown)
+    assert "October 2026" in shown
+    assert "1. Costings" in shown
+    assert "4. Report" in shown
 
 
-def test_the_month_picker_holds_the_open_month(workspace):
+def test_the_month_picker_shows_the_open_month(workspace):
     picker = ui._month_row(workspace)
 
-    assert isinstance(picker, ft.Dropdown)
-    assert picker.value == MONTH
-    assert [option.text for option in picker.options][:2] == [
-        "October 2026",
-        "September 2026",
-    ]
+    assert texts(picker) == ["October 2026"]
+    assert picker.on_click is not None
 
 
 def test_the_month_picker_also_offers_a_month_outside_the_recent_list(workspace):
     workspace.state.select_month("2024-01")
 
-    picker = ui._month_row(workspace)
-
-    assert "2024-01" in [option.key for option in picker.options]
+    assert ui._month_keys(workspace.state)[0] == "2024-01"
 
 
 def test_back_is_disabled_on_the_first_step_and_next_on_the_last(workspace):
@@ -124,33 +144,40 @@ def test_back_is_disabled_on_the_first_step_and_next_on_the_last(workspace):
     assert first[0].disabled is True
     assert first[1].disabled is False
 
-    workspace.step = 3
+    workspace.step = 2
     last = ui._navigation(workspace).controls
     assert last[0].disabled is False
-    assert last[1].disabled is True
+    assert last[1].disabled is False
 
 
-def test_a_passed_step_is_ticked_and_the_open_step_is_filled(workspace):
+def test_the_report_step_exports_instead_of_stepping(workspace):
+    workspace.step = 3
+
+    assert texts(ui._navigation(workspace)) == ["Export CSV", "Download PDF"]
+
+
+def test_a_step_is_passed_current_or_ahead(workspace):
     workspace.step = 2
 
-    buttons = ui._stepper(workspace).controls
-    assert isinstance(buttons[0], ft.OutlinedButton)
-    assert isinstance(buttons[2], ft.FilledButton)
+    assert [ui.step_state(workspace, index) for index in range(4)] == [
+        "passed",
+        "passed",
+        "current",
+        "upcoming",
+    ]
 
-    assert buttons[0].icon == ft.Icons.CHECK
-    assert (
-        isinstance(buttons[1], ft.OutlinedButton) and buttons[1].icon == ft.Icons.CHECK
-    )
-    assert buttons[2].icon is None
-    assert isinstance(buttons[3], ft.OutlinedButton)
+
+def test_the_stepper_numbers_the_four_steps(workspace):
+    shown = texts(ui._stepper(workspace))
+    labels = [line for line in shown if line[:2] in {"1.", "2.", "3.", "4."}]
+
+    assert labels == ["1. Costings", "2. Attendance", "3. Inventory", "4. Report"]
 
 
 def test_the_menu_carries_the_reset():
-    menu = ui.app_bar(ui.Workspace(State.new(MONTH))).actions
-    assert menu is not None
+    menu = ui.menu(ui.Workspace(State.new(MONTH)))
 
-    assert isinstance(menu[0], ft.PopupMenuButton)
-    assert [item.content for item in menu[0].items] == ["Reset data"]
+    assert [item.content for item in menu.items] == ["Reset data"]
 
 
 # Step 1 — Costings
@@ -217,17 +244,24 @@ def test_the_attendance_step_lists_the_holidays_then_every_day(workspace):
 
     assert "Holidays" in shown
     assert "Daily attendance" in shown
-    assert "04 Oct 2026" in shown
+    assert "October 2026" in shown
     assert "Sun 04" in shown  # the closed day is still on the sheet
 
 
-def test_a_closed_day_shows_as_a_holiday_instead_of_two_fields(workspace):
-    step = ui._attendance_grid(workspace)
-    closed_row = next(
-        row for row in step.controls if texts(row) == ["Sun 04", "Holiday"]
-    )
+def test_a_closed_day_keeps_its_counts_but_cannot_be_edited(workspace):
+    day = date(2026, 10, 4)
+    workspace.state.remove_holiday(day)
+    workspace.state.set_attendance(day, 7, 70)
+    workspace.state.add_holiday(day)
 
-    assert len(fields(closed_row)) == 0
+    by_key = {field.key: field for field in fields(ui._attendance_grid(workspace))}
+    mothers = by_key[f"attendance-{day.isoformat()}-mothers"]
+
+    # The counts are kept for the day's reopening, but nothing is written on a
+    # closed day, so the cells are empty and out of the keyboard's reach.
+    assert mothers.disabled is True
+    assert mothers.value == ""
+    assert workspace.state.counts(day) == (7, 70)
 
 
 def test_an_open_day_carries_its_two_counts(workspace):
@@ -377,25 +411,47 @@ def test_the_sabji_sheet_carries_its_own_columns(workspace):
     step = report_ui.sheet(workspace.state, report_ui.SABJI)
     shown = texts(step)
 
-    assert "Total Egg Cost" in shown
-    assert "Daily Total Cost" in shown
-    assert "Rice Balance (Kg)" not in shown
+    assert "Total egg cost" in shown
+    assert "Daily total cost" in shown
+    assert "Rice" not in shown
 
 
 def test_the_register_sheet_carries_its_own_columns(workspace):
     step = report_ui.sheet(workspace.state, report_ui.REGISTER)
     shown = texts(step)
 
-    assert "Rice Balance (Kg)" in shown
-    assert "Morning Snacks & THR Value Rs (Item 2 - Egg)" in shown
-    assert "Total Egg Cost" not in shown
+    assert "Rice" in shown
+    assert "Balance" in shown
+    assert "Morning snacks & THR (item 2 – egg)" in shown
+    assert "Total egg cost" not in shown
 
 
-def test_the_report_scrolls_sideways(workspace):
+def test_the_report_freezes_the_date_and_the_header_and_scrolls_the_figures(workspace):
     step = report_ui.sheet(workspace.state, report_ui.SABJI)
 
-    assert isinstance(step, ft.Row)
-    assert step.scroll == ft.ScrollMode.AUTO
+    assert isinstance(step, ft.Column)
+    header, body = kids(step)
+    # The header strip is above the scroll region, so it cannot scroll away.
+    corner, bands = kids(header)
+    assert isinstance(bands, ft.Row)
+    assert bands.scroll is not None
+    # The body holds the pinned date column beside the figures, and scrolls downwards.
+    assert isinstance(body, ft.Column)
+    assert body.scroll is not None
+    dates, figures = kids(kids(body)[0])
+    assert isinstance(dates, ft.Container)
+    assert dates.border is not None
+    assert figures.scroll is not None
+
+
+def test_a_closed_day_is_tinted_in_the_report(workspace):
+    step = report_ui.sheet(workspace.state, report_ui.SABJI)
+    _, body = kids(step)
+    dates = kids(kids(body)[0])[0]
+
+    closed = next(box for box in kids(dates.content) if texts(box) == ["Sun 04"])
+
+    assert closed.bgcolor == theme.CLOSED_ROW
 
 
 # Stepping, months, reset
@@ -427,25 +483,17 @@ def test_an_edit_saves_without_redrawing(workspace):
     assert drawn == []
 
 
-def test_changing_the_month_opens_it(workspace):
-    ui._change_month(workspace, click(ft.Dropdown(value="2026-09")))
+def test_opening_a_month_records_it(workspace):
+    ui._open_month(workspace, "2026-09")
 
     assert workspace.state.month == "2026-09"
 
 
-def test_a_blank_month_choice_is_ignored(workspace):
-    ui._change_month(workspace, click(ft.Dropdown(value=None)))
+def test_a_step_node_opens_its_step(workspace):
+    node = keyed(ui._stepper(workspace), "step-3")
 
-    assert workspace.state.month == MONTH
-
-
-def test_a_step_button_opens_its_step(workspace):
-    button = ui._stepper(workspace).controls[2]
-    assert isinstance(button, ft.OutlinedButton)
-    assert button.on_click is not None
-
-    handler: Any = button.on_click
-    handler(click(button))
+    handler: Any = node.on_click
+    handler(click(node))
 
     assert workspace.step == 2
 
@@ -512,7 +560,7 @@ def test_every_input_edit_asks_for_a_save():
         "a holiday added": lambda w: ui._holiday_picked(w, picked(date(2026, 10, 6))),
         "a day reopened": lambda w: ui._delete_holiday(w, date(2026, 10, 4)),
         "a delivery added": lambda w: ui._add_delivery(w),
-        "the month": lambda w: ui._change_month(w, click(ft.Dropdown(value="2026-09"))),
+        "the month": lambda w: ui._open_month(w, "2026-09"),
     }
 
     for name, edit in edits.items():

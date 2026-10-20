@@ -35,14 +35,9 @@ PER_HEAD_COLUMNS = {
     "Children TTS": (CHILDREN, TTS),
 }
 
-# The four rate fields the editors show, in screen order: the pair a field edits and
-# the short heading above it. Derived from `PER_HEAD_COLUMNS`, so the headings and
-# the fields they label can never fall out of step.
-HEAD_INITIALS = {MOTHER: "M", CHILDREN: "C"}
-RATE_COLUMNS = tuple(
-    (head, day_type, f"{HEAD_INITIALS[head]} {day_type}")
-    for head, day_type in PER_HEAD_COLUMNS.values()
-)
+# The four rate fields an editor shows, in screen order. The band over them names
+# the head, and each field is headed by its day type.
+RATE_COLUMNS = tuple(PER_HEAD_COLUMNS.values())
 
 # How each item is titled in the editor. The keys are the ones the defaults sheets use.
 # The labels stay short so a row of four rate fields still fits a phone.

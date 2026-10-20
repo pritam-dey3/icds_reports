@@ -556,19 +556,22 @@ The only input control in the app.
 ### 4.8 Holiday chip
 
 ```text
-┌─────────────────────────────┐
-│ 15  │  Sun      (×)         │
-│ Mar │                       │
-└─────────────────────────────┘
+┌───────────────────────┐
+│  Sun        ○        │
+│  15                  │
+│  Mar                 │
+└───────────────────────┘
 ```
 
 - `Mother/BG` fill — the closed-day pink family — `radius/field`, 1 dp `Border/Subtle`,
   12 dp padding.
-- Left block: day number in `Chip date` (`Primary/600`) over `Mar` in `Chip month`.
-- 1 dp vertical divider in `Border/Strong`, 12 dp tall.
-- Weekday in `Chip weekday` (`Text/Secondary`).
-- A 28 dp round remove button at the right, `Border/Subtle` circle with an × glyph. Its
-  touch target is 44 dp even though the visual is smaller.
+- A single stacked block: the weekday in `Chip weekday` (`Text/Secondary`), the day
+  number in `Chip date` (`Primary/600`), the month in `Chip month` (`Text/Tertiary`).
+  Reading down, it says *which day, which date, which month* — the order the week is
+  spoken in, and it keeps the biggest figure on the same line whether or not a weekday
+  name is long.
+- A 28 dp round remove button at the right, `Border/Subtle` circle with an × glyph.
+  Its touch target is 44 dp even though the visual is smaller.
 - Chips flow left to right and wrap; 10 dp gap.
 - Tapping × reopens the day immediately — no confirmation — because the day's counts are
   restored and the action is undone by re-closing it.
