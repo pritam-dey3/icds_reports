@@ -238,7 +238,7 @@ class State:
         """
         months = payload["months"]
         if not isinstance(months, dict):
-            raise ValueError("months must be a mapping")
+            raise TypeError("months must be a mapping")
         return cls(
             month=payload["month"],
             costs=_per_head_frame(payload["costs"]),
