@@ -8,15 +8,14 @@ authors = [
     { name = "Pritam Dey", email = "pritam.pritamdey.984@gmail.com" }
 ]
 dependencies = [
-    "fastapi==0.140",
     "flet>=1.0.4",
     "flet-datatable2==1.0.4",
-    "flet-web>=1.0.4",
     "pandas>=2.3.3",
 ]
 
 [dependency-groups]
 dev = [
+    "fastapi==0.140",
     "flet-cli>=1.0.4",
     "flet-desktop>=1.0.4",
     "flet-web>=1.0.4",
