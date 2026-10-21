@@ -1116,14 +1116,18 @@ def _delivery_day_picked(
 
 
 def _picked_date(event: ft.Event[ft.DatePicker]) -> date | None:
-    """The date a date picker confirmed, from either of the places Flet puts it."""
+    """The date a date picker confirmed, from either of the places Flet puts it.
+
+    Flet sends the picked day back as UTC, so midnight of the 5th east of UTC arrives
+    as the evening of the 4th. Reading the day back in local time undoes that shift.
+    """
     value = event.control.value
     if value is None:
         value = event.data
     if value is None:
         return None
     if isinstance(value, datetime):
-        return value.date()
+        return value.astimezone().date()
     if isinstance(value, date):
         return value
     return None

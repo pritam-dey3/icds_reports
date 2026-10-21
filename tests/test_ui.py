@@ -4,7 +4,7 @@ These tests build the control tree and call the handlers the way Flutter would.
 They need no running app, so they are fast and give a precise failure.
 """
 
-from datetime import date
+from datetime import date, datetime, timezone
 from typing import Any
 
 import flet as ft
@@ -288,6 +288,17 @@ def test_deleting_a_holiday_reopens_that_day(workspace):
     ui._delete_holiday(workspace, day)
 
     assert not workspace.state.is_holiday(day)
+
+
+def test_a_picked_holiday_lands_on_the_day_that_was_picked(workspace):
+    """The picker answers in UTC, so east of UTC a picked day arrives as the evening
+    before. Reading it back in local time must close the day the user chose."""
+    picked = datetime(2026, 10, 6).astimezone().astimezone(timezone.utc)
+
+    ui._holiday_picked(workspace, click(ft.DatePicker(value=picked)))
+
+    assert workspace.state.is_holiday(date(2026, 10, 6))
+    assert not workspace.state.is_holiday(date(2026, 10, 5))
 
 
 # Step 3 — Inventory
