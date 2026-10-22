@@ -9,6 +9,8 @@ env/
 dump/*
 agent-tasks/
 dist/
+dist-android/
+*.log
 # Environments / secrets
 .env
 
