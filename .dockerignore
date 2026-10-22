@@ -1,0 +1,41 @@
+# The build context is the app itself: src/, pyproject.toml and the icon. Keeping
+# it that narrow means a shorter upload and an image without the repository's
+# history, tests and notes in it.
+
+# Version control and editor state
+.git
+.gitignore
+.idea
+.vscode
+.DS_Store
+
+# Local environments and tool caches
+.venv
+venv
+env
+__pycache__
+*.py[cod]
+.pytest_cache
+.ruff_cache
+.mypy_cache
+.flet
+build
+dist
+dist-android
+*.log
+
+# The upload keystore is mounted as a build secret, never part of the context:
+# anything in the context ends up inside the image after COPY.
+*.jks
+*.keystore
+*.p12
+key.properties
+
+# Not part of the app
+.dockerignore
+.github
+agent-tasks
+docs
+dump
+scripts
+tests

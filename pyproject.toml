@@ -11,11 +11,14 @@ dependencies = [
     # Pinned exactly: flet-datatable2 pins flet, and micropip (Pyodide) does
     # not backtrack - an unconstrained `flet` resolves to the newest release
     # and fails with "Requested flet==1.0.4, but flet==1.0.5 is installed".
-    # pandas is the version the bundled Pyodide runtime ships, so the browser
-    # and the desktop install resolve to the same build.
     "flet==1.0.4",
     "flet-datatable2==1.0.4",
-    "pandas==3.0.2",
+    # A range, unlike the two above. The browser gets a fixed 3.0.2 wheel from
+    # the bundled Pyodide lock, while Android resolves against pypi.flet.dev,
+    # which builds no 3.0.2 for CPython 3.14 and would otherwise fail with
+    # "No matching distribution found". Nothing else pins pandas, so neither
+    # resolver has to backtrack.
+    "pandas>=3.0.2,<3.1",
 ]
 
 [dependency-groups]
@@ -50,6 +53,21 @@ copyright = "Copyright (C) 2023-2026 by Flet"
 
 [tool.flet.app]
 path = "src"
+
+[tool.flet.android]
+# One ABI only. Each one carries a complete copy of the Flutter engine, the Dart
+# code and CPython - 68 MB for arm64-v8a, 53 MB for the 32-bit armeabi-v7a - and
+# no phone needs two. Every device that can run Android 12 is 64-bit (Play
+# required 64-bit support from 2019), so the 32-bit build is dead weight here.
+# x86_64, the emulator ABI, is left out for the same reason: add it on the
+# command line with `--arch arm64-v8a x86_64` when testing in one.
+target_arch = ["arm64-v8a"]
+
+[tool.flet.cleanup]
+# pandas and numpy ship their test suites, which nothing imports at runtime:
+# 19 MB and 9 MB of the packaged site-packages. Flet's own defaults already drop
+# compiled sources, stubs and __pycache__, so this is the one addition.
+package_files = ["**/tests"]
 
 
 [tool.pyrefly]

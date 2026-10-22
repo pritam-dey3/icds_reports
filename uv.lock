@@ -422,7 +422,7 @@ dev = [
 requires-dist = [
     { name = "flet", specifier = "==1.0.4" },
     { name = "flet-datatable2", specifier = "==1.0.4" },
-    { name = "pandas", specifier = "==3.0.2" },
+    { name = "pandas", specifier = ">=3.0.2,<3.1" },
 ]
 
 [package.metadata.requires-dev]

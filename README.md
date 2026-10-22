@@ -18,10 +18,47 @@ uv run flet run --web      # browser
 uv run flet run --android  # Android device or emulator
 ```
 
-On Android the app is built and packaged with Flet:
+---
+
+## Building the APK
+
+The APK is built in a container, so the machine needs Docker and nothing else —
+no Flutter SDK, no Android SDK, no JDK:
 
 ```bash
-uv run flet build apk
+docker build -f Dockerfile.apk --target artifacts --output type=local,dest=dist-android .
+```
+
+That leaves `dist-android/icds-reports-flet.apk`: 83 MB, arm64-v8a only,
+release-built and signed with the debug key, which is what Flet signs with when no
+upload keystore is configured. Sideload it with
+`adb install dist-android/icds-reports-flet.apk`.
+
+Two settings in `pyproject.toml` keep it that small, and both are deliberate:
+
+| Setting | Why |
+|---|---|
+| `[tool.flet.android].target_arch = ["arm64-v8a"]` | Each ABI carries its own copy of the Flutter engine, the Dart code and CPython — 68 MB for arm64-v8a, 53 MB for the 32-bit armeabi-v7a. Every device that runs Android 12 is 64-bit, so the 32-bit build was dead weight. x86_64, the emulator ABI, is left out for the same reason and can be added per build with `--arch arm64-v8a x86_64`. |
+| `[tool.flet.cleanup].package_files = ["**/tests"]` | pandas and numpy ship their test suites, 28 MB of the packaged site-packages that nothing imports at runtime. |
+
+Everything runs on `ghcr.io/gmeligio/flutter-android:3.47.7`: its Flutter and
+Android SDKs, a uv and CPython 3.14 taken from the `uv` image, and `flet-cli`
+installed into the container. Two lines of `Dockerfile.apk` are worth knowing:
+
+| Line | Why |
+|---|---|
+| `ln -sfn "$FLUTTER_ROOT" "$HOME/flutter/3.44.8"` | Flet 1.0.4 pins Flutter 3.44.8, downloads that SDK when the directory is absent and leaves an existing one alone. The symlink sends it to the image's own SDK. Delete it to build against the pinned version instead. |
+| `sdkmanager ... platforms;android-34 ... build-tools;35.0.0` | `flet build` insists on platform-tools, platform 35 and build-tools 34 before it packages anything; the `pasteboard` plugin then compiles against platform 34 and the Android Gradle plugin wants build-tools 35. Anything missing there makes Gradle fetch it mid-build, where one truncated archive fails the whole run. |
+
+The first build downloads the Android Python runtimes, the Gradle distribution and
+the wheels, a few hundred MB in all. The app is copied into the image above the build
+step, so editing it invalidates that step and the next build downloads them again —
+the trade for keeping the image free of machine-local caches. A different toolchain
+is one flag away:
+
+```bash
+docker build -f Dockerfile.apk --target artifacts --output type=local,dest=dist-android \
+  --build-arg FLUTTER_IMAGE=ghcr.io/gmeligio/flutter-android:3.44.8 .
 ```
 
 ---

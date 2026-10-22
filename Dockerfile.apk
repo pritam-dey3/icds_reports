@@ -1,0 +1,72 @@
+# syntax=docker/dockerfile:1
+
+# Builds the Android APK inside a container. The Flutter SDK, the JDK, the
+# Android SDK, uv, CPython and the Flet CLI all come from the image and the
+# layers below, so nothing has to be installed on the machine that runs it.
+#
+#   docker build -f Dockerfile.apk --target artifacts --output type=local,dest=dist-android .
+#
+# leaves dist-android/icds-reports-flet.apk behind. A different toolchain is
+# one flag away:
+#
+#   --build-arg FLUTTER_IMAGE=ghcr.io/gmeligio/flutter-android:<version>
+
+ARG FLUTTER_IMAGE=ghcr.io/gmeligio/flutter-android:3.47.7
+
+FROM ${FLUTTER_IMAGE} AS build
+
+# uv, copied from its own image rather than installed, so the build needs no
+# package manager run at all.
+USER root
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+
+USER flutter
+WORKDIR /app
+
+# Line-oriented logs instead of a spinner: the output is read as a build log,
+# not watched in a terminal.
+ENV FLET_CLI_NO_RICH_OUTPUT=1
+
+# flet build refuses to package until these packages are present, and it only
+# knows the versions it was written against: the image ships platform 36 and
+# build-tools 36.0.0, which its check does not accept. Installing them here
+# keeps that download in a cached layer instead of in every build.
+#
+# This runs as the image's own user, which already owns the SDK, so nothing has
+# to be chowned afterwards - and a recursive chown of the SDK takes half an hour.
+#
+# `yes` sits in a subshell because the shell runs with `pipefail` and `yes`
+# dies of SIGPIPE the moment sdkmanager stops reading.
+RUN (yes || true) | sdkmanager --licenses \
+    && (yes || true) | sdkmanager "platform-tools" "platforms;android-35" "build-tools;34.0.0"
+
+# flet 1.0.4 pins Flutter 3.44.8 and installs that SDK itself when the directory
+# is missing - but it does not verify the version of a directory that exists.
+# Pointing the expected path at the image's own SDK keeps the precached 3.47.7
+# and saves the whole download. Delete these lines to build against 3.44.8.
+RUN mkdir -p "$HOME/flutter" && ln -sfn "$FLUTTER_ROOT" "$HOME/flutter/3.44.8"
+
+# The CLI, and the CPython it runs on. `flet[cli]` rather than `flet-cli`: the
+# `flet` package is the one that declares the executable, and it pulls flet-cli
+# in as an extra. The app's own dependencies are installed later, by the
+# packaging step, per Android ABI, so they are not needed in this environment.
+RUN uv python install 3.14 \
+    && uv tool install --python 3.14 "flet[cli]==1.0.4"
+
+# The app itself, last, so that editing it re-runs only the build below.
+COPY --chown=flutter:flutter . .
+
+# The APK.
+RUN --mount=type=secret,id=android_keystore,target=/run/secrets/android-keystore,mode=0444 \
+    --mount=type=secret,id=android_store_password,env=FLET_ANDROID_SIGNING_KEY_STORE_PASSWORD \
+    --mount=type=secret,id=android_key_password,env=FLET_ANDROID_SIGNING_KEY_PASSWORD \
+    if [ -f /run/secrets/android-keystore ]; then \
+        export FLET_ANDROID_SIGNING_KEY_STORE=/run/secrets/android-keystore \
+               FLET_ANDROID_SIGNING_KEY_ALIAS=upload; \
+    fi; \
+    flet build apk --yes --skip-flutter-doctor -o dist-android
+
+# Only the built artefacts, so `--output type=local` writes the apk and nothing
+# else.
+FROM scratch AS artifacts
+COPY --from=build /app/dist-android/ /

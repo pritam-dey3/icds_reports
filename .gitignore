@@ -9,8 +9,16 @@ env/
 dump/*
 agent-tasks/
 dist/
+dist-android/
+*.log
 # Environments / secrets
 .env
+# Android upload keystore and its passwords. The keystore is the identity of
+# the app: losing it, or leaking it, breaks every future update.
+*.jks
+*.keystore
+*.p12
+key.properties
 
 # Tool caches
 .mypy_cache/
