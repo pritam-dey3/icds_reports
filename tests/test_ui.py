@@ -370,6 +370,27 @@ def test_a_delivery_can_be_edited_and_deleted(workspace):
     assert workspace.state.additions() == []
 
 
+def test_a_picked_delivery_day_lands_on_the_day_that_was_picked(workspace):
+    """The picker answers in UTC, so a day picked east of UTC arrives as the evening
+    before. The delivery must keep the day the user chose, not the day before."""
+    ui._add_delivery(workspace)
+    picked = datetime(2026, 10, 9).astimezone().astimezone(timezone.utc)
+
+    ui._delivery_day_picked(workspace, 0, click(ft.DatePicker(value=picked)))
+
+    assert workspace.state.additions()[0]["date"] == "2026-10-09"
+    assert "09 Oct 2026" in texts(ui._deliveries(workspace))
+
+
+def test_a_picked_day_is_taken_at_face_value_when_it_carries_no_zone(workspace):
+    """A picker typed into answers plainly, and a plain date has nothing to shift."""
+    typed = click(ft.DatePicker(value=datetime(2026, 10, 9, 0, 0)))
+    plain = click(ft.DatePicker(value=date(2026, 10, 9)))
+
+    assert ui._picked_date(typed) == date(2026, 10, 9)
+    assert ui._picked_date(plain) == date(2026, 10, 9)
+
+
 # Step 4 — Report
 
 

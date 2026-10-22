@@ -3,14 +3,19 @@ name = "icds-reports-flet"
 version = "0.1.0"
 description = ""
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = "==3.14.*"
 authors = [
     { name = "Pritam Dey", email = "pritam.pritamdey.984@gmail.com" }
 ]
 dependencies = [
-    "flet>=1.0.4",
+    # Pinned exactly: flet-datatable2 pins flet, and micropip (Pyodide) does
+    # not backtrack - an unconstrained `flet` resolves to the newest release
+    # and fails with "Requested flet==1.0.4, but flet==1.0.5 is installed".
+    # pandas is the version the bundled Pyodide runtime ships, so the browser
+    # and the desktop install resolve to the same build.
+    "flet==1.0.4",
     "flet-datatable2==1.0.4",
-    "pandas>=2.3.3",
+    "pandas==3.0.2",
 ]
 
 [dependency-groups]
