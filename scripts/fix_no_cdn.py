@@ -14,6 +14,13 @@ Flet 1.0.4 gets two things wrong in that mode:
    therefore missing and micropip fails with `Failed to fetch`. They are
    downloaded here at build time and dropped next to the runtime.
 
+3. `--no-cdn` sets `flet.fontFallbackBaseUrl` to `assets/fonts/`, but Flet
+   ships no fallback fonts there - only Roboto and the icon font. Flutter's
+   fallback table is a Google-hosted index of Noto subsets, so the first glyph
+   Roboto does not cover makes the engine request a file that is not in the
+   build: with `--no-cdn` it 404s, without it the page goes to gstatic. Only
+   the subsets this app needs are fetched here, so the page stays offline.
+
 Run this after `flet publish --no-cdn`.
 """
 
@@ -22,15 +29,24 @@ from __future__ import annotations
 import json
 import re
 import shutil
+import tomllib
 import urllib.request
 from pathlib import Path
 
 import cyclopts
-import tomllib
 
 app = cyclopts.App(help=__doc__)
 
 _CDN_WHEEL_URL = "https://cdn.jsdelivr.net/pyodide/v{version}/full/{filename}"
+_GSTATIC_URL = "https://fonts.gstatic.com/s/{path}"
+
+# Noto subsets CanvasKit asks for when it meets a glyph Roboto and the icon font
+# do not cover. Paths are relative to the fallback base, exactly as they are on
+# Google's server. Shipping them keeps the app off the network; add one here if
+# the console reports a new unloadable font.
+_FALLBACK_FONTS = [
+    "notosanssymbols/v43/rP2up3q65FkAtHfwd-eIS2brbDN6gxP34F9jRRCe4W3gfQ8gb_VFRkzrbQ.woff2"
+]
 
 
 def _requirement_names(pyproject: Path) -> list[str]:
@@ -70,6 +86,31 @@ def _fix_pyodide_url(index_html: Path) -> None:
         print("Fixed flet.pyodideUrl specifier")
 
 
+def _fix_font_fallback(index_html: Path) -> None:
+    """Make sure the glyph fallback base is the local fonts directory."""
+    text = index_html.read_text(encoding="utf-8")
+    fixed, count = re.subn(
+        r'flet\.fontFallbackBaseUrl\s*=\s*"[^"]*"',
+        'flet.fontFallbackBaseUrl="assets/fonts/"',
+        text,
+    )
+    if count == 0:
+        raise RuntimeError("flet.fontFallbackBaseUrl not found in index.html")
+    index_html.write_text(fixed, encoding="utf-8")
+
+
+def _download_fallback_fonts(dist: Path) -> None:
+    for path in _FALLBACK_FONTS:
+        target = dist / "assets" / "fonts" / path
+        if target.exists():
+            continue
+        target.parent.mkdir(parents=True, exist_ok=True)
+        print(f"Downloading {path}")
+        with urllib.request.urlopen(_GSTATIC_URL.format(path=path)) as response:
+            with target.open("wb") as f:
+                shutil.copyfileobj(response, f)
+
+
 def _download_wheels(dist: Path, pyproject: Path) -> None:
     runtime = dist / "pyodide"
     version = json.loads((runtime / "package.json").read_text(encoding="utf-8"))[
@@ -102,6 +143,8 @@ def main(dist: Path, pyproject: Path = Path("pyproject.toml")) -> None:
         pyproject: Project file whose dependencies decide which wheels ship.
     """
     _fix_pyodide_url(dist / "index.html")
+    _fix_font_fallback(dist / "index.html")
+    _download_fallback_fonts(dist)
     _download_wheels(dist, pyproject)
 
 
